@@ -1,64 +1,31 @@
 import { useState } from 'react';
 
-function generateScript(product: string): string {
-  const p = product.trim();
-  const scripts = [
-    `🎬 HOOK
-"Wait — you've never heard of ${p}? Let me change that RIGHT NOW."
-
-😤 THE PROBLEM
-Most people are still doing it the old way. Wasting time. Wasting money. Getting zero results.
-
-✨ THE SOLUTION
-That's where ${p} comes in. I've been using it for 3 weeks and honestly? Game changer.
-
-💥 THE BENEFITS
-✅ Works in under 60 seconds
-✅ No experience needed
-✅ Results you can actually see
-✅ Half the price of competitors
-
-📣 CALL TO ACTION
-Link in bio. First 50 orders get 20% off — don't sleep on this. 🔥
-
-#${p.replace(/\s+/g, '')} #TikTokMadeMeBuyIt #ProductReview`,
-
-    `🎬 HOOK
-"POV: you just discovered ${p} and your whole routine changed."
-
-😤 THE PROBLEM
-I was skeptical at first. Everyone's selling something these days, right?
-
-✨ THE SOLUTION
-But ${p} is different. Here's the proof nobody's talking about…
-
-💥 THE BENEFITS
-→ Used by 100k+ people worldwide
-→ 4.9 stars across the board
-→ 30-day money-back guarantee
-→ Ships in 2 days
-
-📣 CALL TO ACTION
-Tap the link in bio. Thank me later. 👇
-
-#${p.replace(/\s+/g, '')} #MustHave #TikTokFinds`,
-  ];
-  return scripts[Math.floor(Math.random() * scripts.length)];
-}
-
 export default function App() {
   const [product, setProduct] = useState('');
   const [script, setScript] = useState('');
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState('');
 
   const handleGenerate = async () => {
     if (!product.trim()) return;
     setLoading(true);
     setScript('');
-    await new Promise(r => setTimeout(r, 1200));
-    setScript(generateScript(product));
-    setLoading(false);
+    setError('');
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: product.trim() }),
+      });
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      const data = await res.json();
+      setScript(data.result ?? '');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCopy = () => {
@@ -117,6 +84,12 @@ export default function App() {
             )}
           </button>
         </div>
+
+        {error && (
+          <div className="mt-4 px-4 py-3 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm">
+            {error}
+          </div>
+        )}
 
         {script && (
           <div className="mt-5 bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
