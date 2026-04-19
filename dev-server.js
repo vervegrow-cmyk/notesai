@@ -67,24 +67,27 @@ async function handleGenerate(req, res) {
 }
 
 async function handleIdentify(req, res) {
-  const { image } = await readBody(req);
-  if (!image) return send(res, 400, { error: 'Missing image' });
+  const { image, text: spreadsheetText } = await readBody(req);
+  if (!image && !spreadsheetText) return send(res, 400, { error: 'Missing image or text' });
 
-  const text = await kimiRequest({
-    model: 'moonshot-v1-8k-vision-preview',
+  const isVision = !!image;
+  const model = isVision ? 'moonshot-v1-8k-vision-preview' : 'moonshot-v1-8k';
+  const userContent = isVision
+    ? [
+        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${image}` } },
+        { type: 'text', text: '识别图片中的商品，返回 JSON：{"name":"商品名称","category":"类别","brand":"品牌"}' },
+      ]
+    : `以下是商品表格数据，识别商品信息，返回 JSON：{"name":"商品名称","category":"类别","brand":"品牌"}\n\n${spreadsheetText}`;
+
+  const raw = await kimiRequest({
+    model,
     messages: [
       { role: 'system', content: '你是商品识别专家。只返回合法 JSON，不要任何解释文字。' },
-      {
-        role: 'user',
-        content: [
-          { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${image}` } },
-          { type: 'text', text: '识别图片中的商品，返回 JSON：{"name":"商品名称","category":"类别","brand":"品牌"}' },
-        ],
-      },
+      { role: 'user', content: userContent },
     ],
   });
 
-  const parsed = parseJson(text);
+  const parsed = parseJson(raw);
   send(res, 200, {
     name: parsed?.name || '未知商品',
     category: parsed?.category || '其他',

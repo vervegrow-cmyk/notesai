@@ -3,12 +3,21 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { image } = req.body;
-  if (!image) {
-    return res.status(400).json({ error: 'Missing image' });
+  const { image, text } = req.body;
+  if (!image && !text) {
+    return res.status(400).json({ error: 'Missing image or text' });
   }
 
   try {
+    const isVision = !!image;
+    const model = isVision ? 'moonshot-v1-8k-vision-preview' : 'moonshot-v1-8k';
+    const userContent = isVision
+      ? [
+          { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${image}` } },
+          { type: 'text', text: '识别图片中的商品，返回 JSON 格式：{"name":"商品名称","category":"商品类别","brand":"品牌，不确定则填未知"}' },
+        ]
+      : `以下是商品表格数据，分析并识别商品信息，返回 JSON：{"name":"商品名称","category":"商品类别","brand":"品牌，不确定则填未知"}\n\n${text}`;
+
     const response = await fetch('https://api.moonshot.cn/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -16,25 +25,10 @@ export default async function handler(req, res) {
         Authorization: `Bearer ${process.env.KIMI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'moonshot-v1-8k-vision-preview',
+        model,
         messages: [
-          {
-            role: 'system',
-            content: '你是商品识别专家。只返回合法 JSON，不要任何解释文字。',
-          },
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'image_url',
-                image_url: { url: `data:image/jpeg;base64,${image}` },
-              },
-              {
-                type: 'text',
-                text: '识别图片中的商品，返回 JSON 格式：{"name":"商品名称","category":"商品类别","brand":"品牌，不确定则填未知"}',
-              },
-            ],
-          },
+          { role: 'system', content: '你是商品识别专家。只返回合法 JSON，不要任何解释文字。' },
+          { role: 'user', content: userContent },
         ],
       }),
     });

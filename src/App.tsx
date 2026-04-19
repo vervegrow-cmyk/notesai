@@ -1,36 +1,86 @@
 import { useState, useRef, useEffect } from 'react';
+import * as XLSX from 'xlsx';
 
 type Phase = 'upload' | 'chatting' | 'done';
+type FileType = 'image' | 'video' | 'spreadsheet';
 
-interface Product {
-  name: string;
-  category: string;
-  brand: string;
-}
-
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
+interface Product { name: string; category: string; brand: string; }
+interface Message { role: 'user' | 'assistant'; content: string; }
 interface PricingResult {
-  estimated_price: string;
-  resale_price: string;
-  quick_sale_price: string;
-  confidence: string;
-  reason: string;
+  estimated_price: string; resale_price: string; quick_sale_price: string;
+  confidence: string; reason: string;
 }
 
 const CONFIDENCE_LABEL: Record<string, string> = {
-  high: '高 ✅',
-  medium: '中 ⚠️',
-  low: '低 ❓',
+  high: '高 ✅', medium: '中 ⚠️', low: '低 ❓',
 };
+
+function extractVideoFrame(file: File): Promise<{ base64: string; preview: string }> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'auto';
+    video.src = url;
+
+    const capture = () => {
+      try {
+        const w = video.videoWidth || 640;
+        const h = video.videoHeight || 480;
+        const maxW = 1280;
+        const scale = Math.min(1, maxW / w);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(w * scale);
+        canvas.height = Math.round(h * scale);
+        canvas.getContext('2d')!.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        URL.revokeObjectURL(url);
+        resolve({ base64: dataUrl.split(',')[1], preview: dataUrl });
+      } catch (e) {
+        URL.revokeObjectURL(url);
+        reject(e);
+      }
+    };
+
+    video.onloadeddata = () => {
+      if (video.duration > 0.5) {
+        video.onseeked = capture;
+        video.currentTime = Math.min(1, video.duration * 0.1);
+      } else {
+        capture();
+      }
+    };
+
+    video.onerror = () => { URL.revokeObjectURL(url); reject(new Error('视频加载失败')); };
+    setTimeout(() => { URL.revokeObjectURL(url); reject(new Error('视频处理超时')); }, 15000);
+  });
+}
+
+async function parseSpreadsheet(file: File): Promise<{ text: string; rows: string[][] }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(e.target!.result, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const allRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as unknown[][];
+        const text = allRows.slice(0, 100).map(r => (r as unknown[]).map(String).join(' | ')).join('\n');
+        resolve({ text, rows: allRows.slice(0, 6).map(r => (r as unknown[]).map(String)) });
+      } catch (e) { reject(e); }
+    };
+    reader.onerror = reject;
+    reader.readAsBinaryString(file);
+  });
+}
 
 export default function App() {
   const [phase, setPhase] = useState<Phase>('upload');
+  const [fileType, setFileType] = useState<FileType>('image');
   const [imageBase64, setImageBase64] = useState('');
   const [imagePreview, setImagePreview] = useState('');
+  const [spreadsheetText, setSpreadsheetText] = useState('');
+  const [spreadsheetRows, setSpreadsheetRows] = useState<string[][]>([]);
   const [product, setProduct] = useState<Product | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [userInput, setUserInput] = useState('');
@@ -46,57 +96,100 @@ export default function App() {
   }, [messages, loading]);
 
   useEffect(() => {
-    if (phase === 'chatting' && !loading) {
-      inputRef.current?.focus();
-    }
+    if (phase === 'chatting' && !loading) inputRef.current?.focus();
   }, [phase, loading, messages]);
 
   function reset() {
     setPhase('upload');
+    setFileType('image');
     setImageBase64('');
     setImagePreview('');
+    setSpreadsheetText('');
+    setSpreadsheetRows([]);
     setProduct(null);
     setMessages([]);
     setUserInput('');
     setResult(null);
     setError('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      setError('图片不能超过 10MB');
-      return;
-    }
     setError('');
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const dataUrl = ev.target?.result as string;
-      setImagePreview(dataUrl);
-      // strip "data:image/...;base64," prefix
-      setImageBase64(dataUrl.split(',')[1]);
-    };
-    reader.readAsDataURL(file);
+    setImageBase64('');
+    setImagePreview('');
+    setSpreadsheetText('');
+    setSpreadsheetRows([]);
+
+    const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/');
+    const isSpreadsheet = /\.(xlsx?|csv)$/i.test(file.name) ||
+      file.type.includes('spreadsheet') || file.type === 'text/csv';
+
+    if (isImage) {
+      if (file.size > 10 * 1024 * 1024) { setError('图片不能超过 10MB'); return; }
+      setFileType('image');
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const dataUrl = ev.target?.result as string;
+        setImagePreview(dataUrl);
+        setImageBase64(dataUrl.split(',')[1]);
+      };
+      reader.readAsDataURL(file);
+    } else if (isVideo) {
+      setFileType('video');
+      setLoading(true);
+      try {
+        const { base64, preview } = await extractVideoFrame(file);
+        setImageBase64(base64);
+        setImagePreview(preview);
+      } catch {
+        setError('视频帧提取失败，请尝试其他视频文件');
+      } finally {
+        setLoading(false);
+      }
+    } else if (isSpreadsheet) {
+      if (file.size > 20 * 1024 * 1024) { setError('表格文件不能超过 20MB'); return; }
+      setFileType('spreadsheet');
+      setLoading(true);
+      try {
+        const { text, rows } = await parseSpreadsheet(file);
+        setSpreadsheetText(text);
+        setSpreadsheetRows(rows);
+      } catch {
+        setError('表格解析失败，请检查文件格式');
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      setError('不支持的文件格式，请上传图片、视频或表格');
+    }
   }
 
+  const hasFile = !!(imageBase64 || spreadsheetText);
+  const showSidebar = !!imagePreview;
+
   async function handleStartValuation() {
-    if (!imageBase64) return;
+    if (!hasFile || loading) return;
     setLoading(true);
     setError('');
 
     try {
-      // Step 1: identify
+      const idBody = fileType === 'spreadsheet'
+        ? { text: spreadsheetText }
+        : { image: imageBase64 };
+
       const idRes = await fetch('/api/identify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: imageBase64 }),
+        body: JSON.stringify(idBody),
       });
       if (!idRes.ok) throw new Error(`识别失败 (${idRes.status})`);
       const identified: Product = await idRes.json();
       setProduct(identified);
 
-      // Step 2: first chat turn with product info
       const firstUserMsg: Message = {
         role: 'user',
         content: `商品信息：名称=${identified.name}，类别=${identified.category}，品牌=${identified.brand}`,
@@ -162,18 +255,16 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#f0f2f7]">
 
-      {/* ── Header ── */}
+      {/* Header */}
       <header className="sticky top-0 z-50 bg-[#0f172a] shadow-lg">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-base shadow-md">
               📦
             </div>
-            <div>
-              <span className="text-white font-bold text-base sm:text-lg tracking-tight">
-                Inventory Liquidity <span className="text-violet-400">AI</span>
-              </span>
-            </div>
+            <span className="text-white font-bold text-base sm:text-lg tracking-tight">
+              Inventory Liquidity <span className="text-violet-400">AI</span>
+            </span>
           </div>
           {phase !== 'upload' && (
             <button
@@ -186,40 +277,84 @@ export default function App() {
         </div>
       </header>
 
-      {/* ── Main ── */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
 
-        {/* ── Phase: upload ── */}
+        {/* Phase: upload */}
         {phase === 'upload' && (
           <div className="max-w-xl mx-auto">
-            {/* Hero text */}
             <div className="text-center mb-8">
               <h2 className="text-2xl sm:text-3xl font-bold text-[#0f172a] leading-tight">
                 Get Instant Valuation
               </h2>
               <p className="text-slate-500 mt-2 text-sm sm:text-base">
-                Upload a product photo — AI identifies it and guides you to the best price.
+                Upload a photo, video, or spreadsheet — AI identifies your product and guides you to the best price.
               </p>
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
               {/* Drop zone */}
               <div
-                onClick={() => fileInputRef.current?.click()}
-                className={`relative cursor-pointer transition-all duration-200 ${
-                  imagePreview
-                    ? 'bg-slate-50'
-                    : 'bg-gradient-to-b from-slate-50 to-white hover:from-violet-50/60 hover:to-white'
+                onClick={() => !loading && fileInputRef.current?.click()}
+                className={`relative transition-all duration-200 ${
+                  hasFile
+                    ? 'bg-slate-50 cursor-pointer'
+                    : loading
+                    ? 'cursor-wait'
+                    : 'bg-gradient-to-b from-slate-50 to-white hover:from-violet-50/60 hover:to-white cursor-pointer'
                 }`}
               >
                 {imagePreview ? (
                   <div className="p-4">
-                    <img
-                      src={imagePreview}
-                      alt="Preview"
-                      className="mx-auto max-h-72 rounded-xl object-contain"
-                    />
-                    <p className="text-center text-xs text-slate-400 mt-3">Click to change photo</p>
+                    <div className="relative inline-block w-full">
+                      <img src={imagePreview} alt="Preview" className="mx-auto max-h-72 rounded-xl object-contain" />
+                      {fileType === 'video' && (
+                        <div className="absolute top-2 left-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                          Video frame
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-center text-xs text-slate-400 mt-3">Click to change file</p>
+                  </div>
+                ) : spreadsheetRows.length > 0 ? (
+                  <div className="p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
+                        <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                            d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </div>
+                      <p className="text-sm font-medium text-slate-700">
+                        Spreadsheet loaded — {spreadsheetRows.length} rows preview
+                      </p>
+                    </div>
+                    <div className="overflow-x-auto rounded-lg border border-slate-200">
+                      <table className="text-xs w-full">
+                        <tbody>
+                          {spreadsheetRows.map((row, i) => (
+                            <tr key={i} className={i === 0 ? 'bg-slate-100 font-semibold' : i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                              {row.slice(0, 6).map((cell, j) => (
+                                <td key={j} className="px-2 py-1.5 border-r border-slate-200 last:border-r-0 text-slate-600 max-w-[120px] truncate">
+                                  {cell}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="text-center text-xs text-slate-400 mt-3">Click to change file</p>
+                  </div>
+                ) : loading ? (
+                  <div className="flex flex-col items-center justify-center py-14 px-6">
+                    <svg className="animate-spin h-8 w-8 text-violet-500 mb-3" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                    </svg>
+                    <p className="text-sm text-slate-500">Processing file...</p>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-14 px-6">
@@ -229,15 +364,29 @@ export default function App() {
                           d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                       </svg>
                     </div>
-                    <p className="text-base font-semibold text-slate-700">Drop your product photo here</p>
-                    <p className="text-sm text-slate-400 mt-1">or click to browse · JPG / PNG · max 10 MB</p>
+                    <p className="text-base font-semibold text-slate-700">Drop your file here</p>
+                    <div className="flex items-center gap-3 mt-2">
+                      <span className="text-xs text-slate-400">📷 Images</span>
+                      <span className="text-slate-300">·</span>
+                      <span className="text-xs text-slate-400">🎬 Videos</span>
+                      <span className="text-slate-300">·</span>
+                      <span className="text-xs text-slate-400">📊 Spreadsheets</span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">JPG, PNG, MP4, MOV, XLSX, CSV · max 10 MB</p>
                   </div>
                 )}
-                {/* dashed border overlay */}
-                <div className="absolute inset-3 rounded-xl border-2 border-dashed border-slate-200 pointer-events-none" />
+                {!hasFile && !loading && (
+                  <div className="absolute inset-3 rounded-xl border-2 border-dashed border-slate-200 pointer-events-none" />
+                )}
               </div>
 
-              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,video/*,.csv,.xlsx,.xls"
+                className="hidden"
+                onChange={handleFileChange}
+              />
 
               <div className="p-5 border-t border-slate-100 space-y-3">
                 {error && (
@@ -247,7 +396,7 @@ export default function App() {
                 )}
                 <button
                   onClick={handleStartValuation}
-                  disabled={!imageBase64 || loading}
+                  disabled={!hasFile || loading}
                   className="w-full py-3.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-sm sm:text-base transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
                 >
                   {loading ? (
@@ -256,7 +405,7 @@ export default function App() {
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                       </svg>
-                      Analyzing product...
+                      Analyzing...
                     </>
                   ) : (
                     <>
@@ -272,14 +421,22 @@ export default function App() {
           </div>
         )}
 
-        {/* ── Phase: chatting ── */}
+        {/* Phase: chatting */}
         {phase === 'chatting' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
-            {/* Left sidebar: product card (desktop) */}
-            {product && imagePreview && (
+            {/* Sidebar */}
+            {showSidebar && product && (
               <div className="hidden lg:block lg:col-span-1">
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden sticky top-20">
-                  <img src={imagePreview} alt={product.name} className="w-full aspect-square object-cover" />
+                  <div className="relative">
+                    <img src={imagePreview} alt={product.name} className="w-full aspect-square object-cover" />
+                    {fileType === 'video' && (
+                      <div className="absolute top-2 left-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                        Video
+                      </div>
+                    )}
+                  </div>
                   <div className="p-4 space-y-3">
                     <div>
                       <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Product</p>
@@ -290,11 +447,9 @@ export default function App() {
                       <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Brand</p>
                       <p className="text-sm font-medium text-slate-700">{product.brand}</p>
                     </div>
-                    <div className="pt-3 border-t border-slate-100">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
-                        <p className="text-xs text-slate-500">AI Appraisal in progress</p>
-                      </div>
+                    <div className="pt-3 border-t border-slate-100 flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
+                      <p className="text-xs text-slate-500">AI Appraisal in progress</p>
                     </div>
                   </div>
                 </div>
@@ -302,7 +457,7 @@ export default function App() {
             )}
 
             {/* Chat panel */}
-            <div className="lg:col-span-2 w-full">
+            <div className={`${showSidebar ? 'lg:col-span-2' : 'lg:col-span-3'} w-full`}>
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[580px] sm:h-[640px]">
                 {/* Mobile top bar */}
                 {product && (
@@ -323,22 +478,24 @@ export default function App() {
 
                 {/* Messages */}
                 <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
-                  {messages.filter(m => m.role === 'assistant' || (m.role === 'user' && !m.content.startsWith('商品信息：'))).map((msg, i) => (
-                    <div key={i} className={`flex items-end gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      {msg.role === 'assistant' && (
-                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-xs flex-shrink-0 mb-0.5">
-                          🤖
+                  {messages
+                    .filter(m => m.role === 'assistant' || (m.role === 'user' && !m.content.startsWith('商品信息：')))
+                    .map((msg, i) => (
+                      <div key={i} className={`flex items-end gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        {msg.role === 'assistant' && (
+                          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-xs flex-shrink-0 mb-0.5">
+                            🤖
+                          </div>
+                        )}
+                        <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
+                          msg.role === 'user'
+                            ? 'bg-[#0f172a] text-white rounded-br-sm'
+                            : 'bg-slate-100 text-slate-800 rounded-bl-sm'
+                        }`}>
+                          {msg.content}
                         </div>
-                      )}
-                      <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                        msg.role === 'user'
-                          ? 'bg-[#0f172a] text-white rounded-br-sm'
-                          : 'bg-slate-100 text-slate-800 rounded-bl-sm'
-                      }`}>
-                        {msg.content}
                       </div>
-                    </div>
-                  ))}
+                    ))}
                   {loading && (
                     <div className="flex items-end gap-2 justify-start">
                       <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-xs flex-shrink-0">
@@ -387,14 +544,22 @@ export default function App() {
           </div>
         )}
 
-        {/* ── Phase: done ── */}
+        {/* Phase: done */}
         {phase === 'done' && result && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
-            {/* Left: image */}
-            {imagePreview && (
+            {/* Sidebar */}
+            {showSidebar && (
               <div className="hidden lg:block lg:col-span-1">
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden sticky top-20">
-                  <img src={imagePreview} alt={product?.name} className="w-full aspect-square object-cover" />
+                  <div className="relative">
+                    <img src={imagePreview} alt={product?.name} className="w-full aspect-square object-cover" />
+                    {fileType === 'video' && (
+                      <div className="absolute top-2 left-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                        Video
+                      </div>
+                    )}
+                  </div>
                   <div className="p-4">
                     <p className="text-sm font-bold text-slate-800">{product?.name}</p>
                     <p className="text-xs text-slate-500 mt-1">{product?.brand} · {product?.category}</p>
@@ -403,9 +568,8 @@ export default function App() {
               </div>
             )}
 
-            {/* Right: results */}
-            <div className="lg:col-span-2 w-full space-y-4">
-              {/* Header banner */}
+            {/* Results */}
+            <div className={`${showSidebar ? 'lg:col-span-2' : 'lg:col-span-3'} w-full space-y-4`}>
               <div className="bg-[#0f172a] rounded-2xl p-6 flex items-center gap-4">
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-2xl shadow-lg">
                   ✅
@@ -416,7 +580,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Price grid */}
               <div className="grid grid-cols-2 gap-3">
                 <PriceCard label="Purchase Price" value={result.estimated_price} accent="violet" />
                 <PriceCard label="Resale Price" value={result.resale_price} accent="indigo" />
@@ -424,13 +587,11 @@ export default function App() {
                 <PriceCard label="Confidence" value={CONFIDENCE_LABEL[result.confidence] ?? result.confidence} accent="slate" />
               </div>
 
-              {/* Reason */}
               <div className="bg-white rounded-2xl border border-slate-200 p-5">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">AI Analysis</p>
                 <p className="text-sm text-slate-700 leading-relaxed">{result.reason}</p>
               </div>
 
-              {/* Actions */}
               <div className="grid grid-cols-2 gap-3">
                 <button
                   onClick={reset}
