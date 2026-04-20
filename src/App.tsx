@@ -691,26 +691,29 @@ export default function App() {
                 }
               </div>
 
-              {/* Add product button — anchored at bottom */}
+              {/* Add product upload zone — anchored at bottom */}
               {!fromSpreadsheet && (
-                <div className="p-2 border-t border-slate-100 flex-shrink-0">
+                <div className="p-2 pt-0 flex-shrink-0">
                   <button
                     onClick={() => addProductInputRef.current?.click()}
                     disabled={addingProduct || loading}
-                    className="w-full flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl border-2 border-dashed border-violet-200 hover:border-violet-400 bg-violet-50/40 hover:bg-violet-50 text-violet-400 hover:text-violet-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full rounded-xl border-2 border-dashed border-slate-200 hover:border-violet-300 bg-slate-50 hover:bg-violet-50/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed p-3"
                   >
                     {addingProduct ? (
-                      <>
-                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
-                        <span className="text-xs font-medium">识别中…</span>
-                      </>
+                      <div className="flex flex-col items-center gap-1.5 py-1">
+                        <svg className="animate-spin h-5 w-5 text-violet-500" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+                        <span className="text-xs text-slate-500">AI 识别中…</span>
+                      </div>
                     ) : (
-                      <>
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                        </svg>
-                        <span className="text-xs font-medium">添加新产品</span>
-                      </>
+                      <div className="flex flex-col items-center gap-1.5">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-100 to-indigo-100 flex items-center justify-center">
+                          <svg className="w-4 h-4 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                          </svg>
+                        </div>
+                        <p className="text-xs font-semibold text-slate-600">添加新产品</p>
+                        <p className="text-[10px] text-slate-400">📷 图片（多选）· max 10MB</p>
+                      </div>
                     )}
                   </button>
                   <input
