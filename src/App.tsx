@@ -61,7 +61,15 @@ function clearSession() {
   }
   keys.forEach(k => sessionStorage.removeItem(k));
   sessionStorage.removeItem('valuation-session');
+  localStorage.removeItem('valuation-groups');
 }
+
+const _savedGroups = (() => {
+  try {
+    const r = localStorage.getItem('valuation-groups');
+    return r ? JSON.parse(r) as ProductGroup[] : null;
+  } catch { return null; }
+})();
 
 export default function App() {
   const [appView, setAppViewState] = useState<AppView>(readStoredView);
@@ -90,10 +98,14 @@ export default function App() {
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>(
     () => (_vs?.uploadedImages ?? []).map((url: string) => ({ base64: url.split(',')[1] ?? url, preview: url, thumbnail: url }))
   );
-  const [productGroups, setProductGroups] = useState<ProductGroup[]>(_vs?.productGroups ?? []);
-  const [selectedGroup, setSelectedGroup] = useState<ProductGroup | null>(
-    () => { const g = _vs?.productGroups; const i = _vs?.selGroupIdx ?? -1; return g && i >= 0 ? g[i] ?? null : null; }
+  const [productGroups, setProductGroups] = useState<ProductGroup[]>(
+    () => (_savedGroups && _savedGroups.length > 0) ? _savedGroups : (_vs?.productGroups ?? [])
   );
+  const [selectedGroup, setSelectedGroup] = useState<ProductGroup | null>(() => {
+    const groups = (_savedGroups && _savedGroups.length > 0) ? _savedGroups : (_vs?.productGroups ?? []);
+    const i = _vs?.selGroupIdx ?? -1;
+    return i >= 0 ? groups[i] ?? null : null;
+  });
 
   // Spreadsheet state
   const [spreadsheetRows, setSpreadsheetRows] = useState<string[][]>(_vs?.spreadsheetRows ?? []);
@@ -130,6 +142,14 @@ export default function App() {
       selSPIdx: selectedSP ? spreadsheetProducts.indexOf(selectedSP) : -1,
     });
   }, [phase, fileType, imageBase64, uploadedImages, productGroups, spreadsheetProducts, spreadsheetRows, product, result, messages, selectedGroup, selectedSP]);
+
+  // Persist product groups (with thumbnails) to localStorage so they survive refresh
+  useEffect(() => {
+    if (phase === 'upload') { localStorage.removeItem('valuation-groups'); return; }
+    if (productGroups.length > 0) {
+      try { localStorage.setItem('valuation-groups', JSON.stringify(productGroups)); } catch { /* quota */ }
+    }
+  }, [productGroups, phase]);
 
   // Save each thumbnail in its own sessionStorage key (~10KB each, avoids quota issues)
   useEffect(() => {
@@ -253,11 +273,15 @@ export default function App() {
         identified.push(result);
       }
       const groups = await callGroupApi(identified);
-      setProductGroups(groups);
+      const groupsWithThumbs = groups.map(g => ({
+        ...g,
+        thumbnail: uploadedImages[g.indices[0] ?? 0]?.thumbnail || '',
+      }));
+      setProductGroups(groupsWithThumbs);
 
-      if (groups.length <= 1) {
+      if (groupsWithThumbs.length <= 1) {
         // Single group — skip select, go straight to chat
-        const g = groups[0] ?? { indices: [0], ...identified[0] };
+        const g = groupsWithThumbs[0] ?? { indices: [0], ...identified[0] };
         const prod = { name: g.name, category: g.category, brand: g.brand };
         setProduct(prod);
         setSelectedGroup(g);
@@ -333,10 +357,10 @@ export default function App() {
       }
       let newGroups: ProductGroup[];
       if (identified.length === 1) {
-        newGroups = [{ name: identified[0].name, category: identified[0].category, brand: identified[0].brand, indices: [offset] }];
+        newGroups = [{ name: identified[0].name, category: identified[0].category, brand: identified[0].brand, indices: [offset], thumbnail: newImages[0]?.thumbnail || '' }];
       } else {
         const grouped = await callGroupApi(identified);
-        newGroups = grouped.map(g => ({ ...g, indices: g.indices.map(i => i + offset) }));
+        newGroups = grouped.map(g => ({ ...g, indices: g.indices.map(i => i + offset), thumbnail: newImages[g.indices[0] ?? 0]?.thumbnail || '' }));
       }
       setUploadedImages(prev => [...prev, ...newImages]);
       setProductGroups(prev => [...prev, ...newGroups]);
@@ -724,8 +748,8 @@ export default function App() {
                           selectedGroup === g ? 'border-violet-300 bg-violet-50 shadow-sm' : 'border-transparent hover:bg-slate-50 hover:border-slate-200'
                         }`}>
                         <div className="w-11 h-11 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100">
-                          {g.indices.length === 1
-                            ? <img src={uploadedImages[g.indices[0]]?.thumbnail || uploadedImages[g.indices[0]]?.preview} alt={g.name} className="w-full h-full object-cover" />
+                          {g.indices.length === 1 || uploadedImages.length === 0
+                            ? <img src={g.thumbnail || uploadedImages[g.indices[0]]?.thumbnail || uploadedImages[g.indices[0]]?.preview} alt={g.name} className="w-full h-full object-cover" />
                             : <div className="w-full h-full grid grid-cols-2 gap-0.5">
                                 {g.indices.slice(0, 4).map(idx => (
                                   <img key={idx} src={uploadedImages[idx]?.thumbnail || uploadedImages[idx]?.preview} alt="" className="w-full h-full object-cover" />

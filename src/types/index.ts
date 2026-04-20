@@ -54,6 +54,7 @@ export interface ProductGroup {
   name: string;
   category: string;
   brand: string;
+  thumbnail?: string;
 }
 
 export interface ChatAttachment {
