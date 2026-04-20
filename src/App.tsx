@@ -55,22 +55,6 @@ export default function App() {
     localStorage.setItem('appView', appView);
   }, [appView]);
 
-  // ── Session persistence (survives same-tab refresh) ───────────────────────
-  useEffect(() => {
-    if (phase === 'upload') { clearSession(); return; }
-    saveSession({
-      phase, fileType, imageBase64,
-      uploadedImages: uploadedImages.map(img => img.base64),
-      productGroups,
-      spreadsheetProducts: spreadsheetProducts.map(sp => ({ ...sp, thumbnail: sp.thumbnail?.startsWith('blob:') ? undefined : sp.thumbnail })),
-      spreadsheetRows,
-      product, result,
-      messages: messages.map(m => ({ role: m.role, content: m.content })),
-      selGroupIdx: selectedGroup ? productGroups.indexOf(selectedGroup) : -1,
-      selSPIdx: selectedSP ? spreadsheetProducts.indexOf(selectedSP) : -1,
-    });
-  }, [phase, fileType, imageBase64, uploadedImages, productGroups, spreadsheetProducts, spreadsheetRows, product, result, messages, selectedGroup, selectedSP]);
-
   const [phase, setPhase] = useState<Phase>(_vs?.phase ?? 'upload');
   const [fileType, setFileType] = useState<FileType>(_vs?.fileType ?? 'image');
 
@@ -107,6 +91,22 @@ export default function App() {
   const [addingProduct, setAddingProduct] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const addProductInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Session persistence (survives same-tab refresh) ───────────────────────
+  useEffect(() => {
+    if (phase === 'upload') { clearSession(); return; }
+    saveSession({
+      phase, fileType, imageBase64,
+      uploadedImages: uploadedImages.map(img => img.base64),
+      productGroups,
+      spreadsheetProducts: spreadsheetProducts.map(sp => ({ ...sp, thumbnail: sp.thumbnail?.startsWith('blob:') ? undefined : sp.thumbnail })),
+      spreadsheetRows,
+      product, result,
+      messages: messages.map(m => ({ role: m.role, content: m.content })),
+      selGroupIdx: selectedGroup ? productGroups.indexOf(selectedGroup) : -1,
+      selSPIdx: selectedSP ? spreadsheetProducts.indexOf(selectedSP) : -1,
+    });
+  }, [phase, fileType, imageBase64, uploadedImages, productGroups, spreadsheetProducts, spreadsheetRows, product, result, messages, selectedGroup, selectedSP]);
 
   function revokeThumbnails(products: SpreadsheetProduct[]) {
     products.forEach(p => { if (p.thumbnail?.startsWith('blob:')) URL.revokeObjectURL(p.thumbnail); });
