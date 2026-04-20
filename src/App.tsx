@@ -5,7 +5,6 @@ import { callPricingApi } from './services/pricingApi';
 import { callIdentifyApi } from './services/identifyApi';
 import { callGroupApi } from './services/groupApi';
 import { ChatPanel } from './ui/blocks/ChatPanel';
-import { PriceCard } from './ui/components/PriceCard';
 import { RecoveryMethodModal } from './modules/recovery/RecoveryMethodModal';
 import { RecoveryCartPage } from './modules/recovery/RecoveryCartPage';
 import { RecoveryOrderListPage } from './modules/recovery/RecoveryOrderListPage';
@@ -13,9 +12,6 @@ import { useRecoveryStore } from './stores/recoveryStore';
 
 type AppView = 'valuation' | 'cart' | 'orders';
 
-const CONFIDENCE_LABEL: Record<string, string> = {
-  high: '高 ✅', medium: '中 ⚠️', low: '低 ❓',
-};
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -159,11 +155,10 @@ export default function App() {
     if (data.done) {
       setResult(data);
       setMessages([...initMessages, { role: 'assistant', content: data.reason }]);
-      if (changePhase) setPhase('done');
     } else {
       setMessages([...initMessages, { role: 'assistant', content: data.reply }]);
-      if (changePhase) setPhase('chatting');
     }
+    if (changePhase) setPhase('chatting');
   }
 
   async function handleStartValuation() {
@@ -251,7 +246,7 @@ export default function App() {
       if (data.done) {
         setResult(data);
         setMessages([...newMessages, { role: 'assistant', content: data.reason }]);
-        if (phase !== 'select') setPhase('done');
+        // stay on current phase — ChatPanel handles result display inline
       } else {
         setMessages([...newMessages, { role: 'assistant', content: data.reply }]);
       }
@@ -313,7 +308,7 @@ export default function App() {
       if (data.done) {
         setResult(data);
         setMessages([...newMessages, { role: 'assistant', content: data.reason }]);
-        if (phase !== 'select') setPhase('done');
+        // stay on current phase — ChatPanel handles result display inline
       } else {
         setMessages([...newMessages, { role: 'assistant', content: data.reply }]);
       }
@@ -323,7 +318,6 @@ export default function App() {
   }
 
   const hasFile = uploadedImages.length > 0 || spreadsheetProducts.length > 0;
-  const showSidebar = !!imagePreview;
   const fromSpreadsheet = spreadsheetProducts.length > 0;
   const hasSelection = !!(selectedSP || selectedGroup);
 
@@ -563,83 +557,53 @@ export default function App() {
           </div>
         )}
 
-        {/* ── Phase: select ── */}
-        {phase === 'select' && (
-          <div className={`${hasSelection ? 'flex gap-4 items-start max-w-2xl mx-auto' : 'max-w-5xl mx-auto'}`}>
-            <div className={hasSelection ? 'w-44 flex-shrink-0' : 'w-full'}>
-              {!hasSelection && (
-                <div className="mb-6">
-                  <h2 className="text-xl sm:text-2xl font-bold text-[#0f172a]">选择要估价的产品</h2>
-                  <p className="text-slate-500 text-sm mt-1">
-                    {fromSpreadsheet
-                      ? `共找到 ${spreadsheetProducts.length} 个产品，点击任意一个开始 AI 估价`
-                      : `AI 识别出 ${productGroups.length} 组产品，点击任意一组开始 AI 估价`}
-                  </p>
-                </div>
-              )}
-              {hasSelection && (
-                <div className="mb-3">
-                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">
-                    {fromSpreadsheet ? `Products (${spreadsheetProducts.length})` : `Groups (${productGroups.length})`}
-                  </p>
-                </div>
-              )}
-              {error && !hasSelection && (
-                <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-600">
-                  <span>⚠️</span> {error}
+        {/* ── Phase: select / chatting — unified sidebar+chat layout ── */}
+        {(phase === 'select' || phase === 'chatting') && (
+          <div className="flex gap-4 items-start max-w-2xl mx-auto">
+
+            {/* Left: product list, always visible top-to-bottom */}
+            <div className="w-44 flex-shrink-0">
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2 px-0.5">
+                {phase === 'chatting'
+                  ? 'Product'
+                  : fromSpreadsheet
+                    ? `Products (${spreadsheetProducts.length})`
+                    : `Groups (${productGroups.length})`}
+              </p>
+
+              {/* Single product (chatting phase) */}
+              {phase === 'chatting' && product && (
+                <div className="flex items-center gap-2.5 p-2.5 rounded-xl border border-violet-300 bg-violet-50 shadow-sm">
+                  <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100 flex items-center justify-center relative">
+                    {imagePreview
+                      ? <img src={imagePreview} alt={product.name} className="w-full h-full object-cover" />
+                      : <span className="text-base opacity-30">📦</span>}
+                    {fileType === 'video' && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/25">
+                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-violet-700 truncate">{product.name}</p>
+                    <p className="text-[10px] text-slate-400 truncate">{product.category}</p>
+                  </div>
+                  <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${result ? 'bg-green-500' : 'bg-violet-500 animate-pulse'}`} />
                 </div>
               )}
 
-              {/* ── Spreadsheet product grid ── */}
-              {fromSpreadsheet && !selectedSP && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {spreadsheetProducts.map((sp, i) => (
-                    <button key={i} onClick={() => handleSelectProduct(sp)} disabled={loading}
-                      className="text-left bg-white rounded-2xl border border-slate-200 hover:border-violet-300 hover:shadow-lg shadow-sm overflow-hidden transition-all group disabled:opacity-50">
-                      <div className="w-full aspect-square bg-gradient-to-br from-slate-100 to-slate-200 overflow-hidden flex items-center justify-center relative">
-                        {sp.thumbnail ? (
-                          <img src={sp.thumbnail} alt={sp.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                        ) : (
-                          <span className="text-5xl opacity-20">📦</span>
-                        )}
-                      </div>
-                      <div className="p-4">
-                        <p className="font-semibold text-slate-800 text-sm group-hover:text-violet-700 transition-colors truncate">{sp.name}</p>
-                        <p className="text-xs text-slate-400 mt-0.5 mb-3">{sp.category}</p>
-                        <div className="space-y-1">
-                          {Object.entries(sp.details).slice(0, 3).map(([k, v]) => (
-                            <div key={k} className="flex justify-between gap-2">
-                              <span className="text-xs text-slate-400 truncate max-w-[50%]">{k}</span>
-                              <span className="text-xs font-medium text-slate-700 truncate">{v}</span>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-1 text-xs font-semibold text-violet-600 group-hover:text-violet-700">
-                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                          </svg>
-                          Start Valuation →
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* ── Spreadsheet product sidebar ── */}
-              {fromSpreadsheet && selectedSP && (
-                <div className="space-y-1.5 max-h-[calc(100vh-7rem)] overflow-y-auto pr-1">
+              {/* Spreadsheet products */}
+              {phase === 'select' && fromSpreadsheet && (
+                <div className="space-y-1.5 max-h-[calc(100vh-8rem)] overflow-y-auto pr-1">
                   {spreadsheetProducts.map((sp, i) => (
                     <button key={i} onClick={() => handleSelectProduct(sp)} disabled={loading}
                       className={`w-full text-left flex items-center gap-2.5 p-2.5 rounded-xl border transition-all ${
                         selectedSP === sp ? 'border-violet-300 bg-violet-50 shadow-sm' : 'border-transparent bg-white hover:border-slate-200'
                       }`}>
                       <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100 flex items-center justify-center">
-                        {sp.thumbnail ? (
-                          <img src={sp.thumbnail} alt={sp.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-base opacity-30">📦</span>
-                        )}
+                        {sp.thumbnail
+                          ? <img src={sp.thumbnail} alt={sp.name} className="w-full h-full object-cover" />
+                          : <span className="text-base opacity-30">📦</span>}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className={`text-xs font-semibold truncate ${selectedSP === sp ? 'text-violet-700' : 'text-slate-800'}`}>{sp.name}</p>
@@ -651,71 +615,26 @@ export default function App() {
                 </div>
               )}
 
-              {/* ── Image group grid ── */}
-              {!fromSpreadsheet && !selectedGroup && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {productGroups.map((g, i) => (
-                    <button key={i} onClick={() => handleSelectGroup(g)} disabled={loading}
-                      className="text-left bg-white rounded-2xl border border-slate-200 hover:border-violet-300 hover:shadow-lg shadow-sm overflow-hidden transition-all group disabled:opacity-50">
-                      <div className="w-full aspect-square bg-slate-100 overflow-hidden">
-                        {g.indices.length === 1 ? (
-                          <img
-                            src={uploadedImages[g.indices[0]]?.preview}
-                            alt={g.name}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          />
-                        ) : (
-                          <div className="w-full h-full grid grid-cols-2 gap-0.5">
-                            {g.indices.slice(0, 4).map(idx => (
-                              <img
-                                key={idx}
-                                src={uploadedImages[idx]?.preview}
-                                alt=""
-                                className="w-full h-full object-cover"
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div className="p-4">
-                        <p className="font-semibold text-slate-800 text-sm group-hover:text-violet-700 transition-colors truncate">{g.name}</p>
-                        <p className="text-xs text-slate-400 mt-0.5 mb-3">
-                          {g.category}{g.brand ? ` · ${g.brand}` : ''} · {g.indices.length} 张图片
-                        </p>
-                        <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-1 text-xs font-semibold text-violet-600 group-hover:text-violet-700">
-                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                          </svg>
-                          Start Valuation →
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* ── Image group sidebar ── */}
-              {!fromSpreadsheet && selectedGroup && (
-                <div className="space-y-1.5 max-h-[calc(100vh-7rem)] overflow-y-auto pr-1">
+              {/* Image groups */}
+              {phase === 'select' && !fromSpreadsheet && (
+                <div className="space-y-1.5 max-h-[calc(100vh-8rem)] overflow-y-auto pr-1">
                   {productGroups.map((g, i) => (
                     <button key={i} onClick={() => handleSelectGroup(g)} disabled={loading}
                       className={`w-full text-left flex items-center gap-2.5 p-2.5 rounded-xl border transition-all ${
                         selectedGroup === g ? 'border-violet-300 bg-violet-50 shadow-sm' : 'border-transparent bg-white hover:border-slate-200'
                       }`}>
                       <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100">
-                        {g.indices.length === 1 ? (
-                          <img src={uploadedImages[g.indices[0]]?.preview} alt={g.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full grid grid-cols-2 gap-0.5">
-                            {g.indices.slice(0, 4).map(idx => (
-                              <img key={idx} src={uploadedImages[idx]?.preview} alt="" className="w-full h-full object-cover" />
-                            ))}
-                          </div>
-                        )}
+                        {g.indices.length === 1
+                          ? <img src={uploadedImages[g.indices[0]]?.preview} alt={g.name} className="w-full h-full object-cover" />
+                          : <div className="w-full h-full grid grid-cols-2 gap-0.5">
+                              {g.indices.slice(0, 4).map(idx => (
+                                <img key={idx} src={uploadedImages[idx]?.preview} alt="" className="w-full h-full object-cover" />
+                              ))}
+                            </div>}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className={`text-xs font-semibold truncate ${selectedGroup === g ? 'text-violet-700' : 'text-slate-800'}`}>{g.name}</p>
-                        <p className="text-[10px] text-slate-400">{g.indices.length} 张图片</p>
+                        <p className="text-[10px] text-slate-400">{g.indices.length} 图</p>
                       </div>
                       {selectedGroup === g && <div className="w-1.5 h-1.5 rounded-full bg-violet-500 flex-shrink-0" />}
                     </button>
@@ -724,108 +643,26 @@ export default function App() {
               )}
             </div>
 
-            {hasSelection && (
-              <div className="flex-1 min-w-0">
+            {/* Right: chat panel or select placeholder */}
+            <div className="flex-1 min-w-0">
+              {(phase === 'chatting' || hasSelection) ? (
                 <ChatPanel {...chatPanelProps} compact />
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Phase: chatting ── */}
-        {phase === 'chatting' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
-            {showSidebar && product && (
-              <div className="hidden lg:block lg:col-span-1">
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden sticky top-20">
-                  <div className="relative">
-                    <img src={imagePreview} alt={product.name} className="w-full h-44 object-cover" />
-                    {fileType === 'video' && (
-                      <div className="absolute top-2 left-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                        Video
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-3 space-y-2">
-                    <div>
-                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">Product</p>
-                      <p className="text-sm font-bold text-slate-800">{product.name}</p>
-                      <p className="text-xs text-slate-500">{product.category}</p>
-                    </div>
-                    <div className="pt-2 border-t border-slate-100">
-                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">Brand</p>
-                      <p className="text-sm font-medium text-slate-700">{product.brand}</p>
-                    </div>
-                    <div className="pt-3 border-t border-slate-100 flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
-                      <p className="text-xs text-slate-500">AI Appraisal in progress</p>
-                    </div>
-                  </div>
+              ) : (
+                <div className="bg-white rounded-2xl border border-slate-200 h-[400px] flex flex-col items-center justify-center text-center px-6 gap-3">
+                  {error && <p className="text-sm text-red-500">⚠️ {error}</p>}
+                  <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-2xl">👈</div>
+                  <p className="text-sm font-semibold text-slate-700">
+                    {fromSpreadsheet ? '从左侧选择一个产品开始 AI 估价' : '从左侧选择一组产品开始 AI 估价'}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {fromSpreadsheet
+                      ? `共 ${spreadsheetProducts.length} 个产品`
+                      : `共 ${productGroups.length} 组，AI 已识别分类`}
+                  </p>
                 </div>
-              </div>
-            )}
-            <div className={`${showSidebar ? 'lg:col-span-2' : 'lg:col-span-3'} w-full`}>
-              <ChatPanel {...chatPanelProps} />
+              )}
             </div>
-          </div>
-        )}
 
-        {/* ── Phase: done ── */}
-        {phase === 'done' && result && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
-            {showSidebar && (
-              <div className="hidden lg:block lg:col-span-1">
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden sticky top-20">
-                  <div className="relative">
-                    <img src={imagePreview} alt={product?.name} className="w-full aspect-square object-cover" />
-                    {fileType === 'video' && (
-                      <div className="absolute top-2 left-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                        Video
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-4">
-                    <p className="text-sm font-bold text-slate-800">{product?.name}</p>
-                    <p className="text-xs text-slate-500 mt-1">{product?.brand} · {product?.category}</p>
-                  </div>
-                </div>
-              </div>
-            )}
-            <div className={`${showSidebar ? 'lg:col-span-2' : 'lg:col-span-3'} w-full space-y-4`}>
-              <div className="bg-[#0f172a] rounded-2xl p-6 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-2xl shadow-lg">✅</div>
-                <div>
-                  <p className="text-white font-bold text-lg">Appraisal Complete</p>
-                  {product && <p className="text-slate-400 text-sm">{product.name}</p>}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <PriceCard label="Purchase Price" value={result.estimated_price} accent="violet" />
-                <PriceCard label="Resale Price" value={result.resale_price} accent="indigo" />
-                <PriceCard label="Quick Sale" value={result.quick_sale_price} accent="slate" />
-                <PriceCard label="Confidence" value={CONFIDENCE_LABEL[result.confidence] ?? result.confidence} accent="slate" />
-              </div>
-              <div className="bg-white rounded-2xl border border-slate-200 p-5">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">AI Analysis</p>
-                <p className="text-sm text-slate-700 leading-relaxed">{result.reason}</p>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <button onClick={reset} className="py-3 rounded-xl border border-slate-200 hover:border-slate-300 bg-white text-slate-700 text-sm font-semibold transition-all">
-                  ↺ New Appraisal
-                </button>
-                <button
-                  onClick={() => {
-                    const text = `Product: ${product?.name}\nPurchase: ${result.estimated_price}\nResale: ${result.resale_price}\nQuick Sale: ${result.quick_sale_price}`;
-                    navigator.clipboard.writeText(text);
-                  }}
-                  className="py-3 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white text-sm font-semibold transition-all shadow-md"
-                >
-                  Copy Results
-                </button>
-              </div>
-            </div>
           </div>
         )}
 
