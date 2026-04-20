@@ -547,8 +547,8 @@ export default function App() {
 
         {/* ── Phase: select ── */}
         {phase === 'select' && (
-          <div className={`${hasSelection ? 'flex gap-4 items-start max-w-3xl mx-auto' : 'max-w-5xl mx-auto'}`}>
-            <div className={hasSelection ? 'w-48 flex-shrink-0' : 'w-full'}>
+          <div className={`${hasSelection ? 'flex gap-4 items-start max-w-2xl mx-auto' : 'max-w-5xl mx-auto'}`}>
+            <div className={hasSelection ? 'w-44 flex-shrink-0' : 'w-full'}>
               {!hasSelection && (
                 <div className="mb-6">
                   <h2 className="text-xl sm:text-2xl font-bold text-[#0f172a]">选择要估价的产品</h2>
