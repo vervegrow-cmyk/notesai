@@ -88,7 +88,7 @@ export default function App() {
 
   // Multi-image state
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>(
-    () => (_vs?.uploadedImages ?? []).map((url: string) => ({ base64: url.split(',')[1] ?? url, preview: url }))
+    () => (_vs?.uploadedImages ?? []).map((url: string) => ({ base64: url.split(',')[1] ?? url, preview: url, thumbnail: url }))
   );
   const [productGroups, setProductGroups] = useState<ProductGroup[]>(_vs?.productGroups ?? []);
   const [selectedGroup, setSelectedGroup] = useState<ProductGroup | null>(
@@ -131,14 +131,15 @@ export default function App() {
     });
   }, [phase, fileType, imageBase64, uploadedImages, productGroups, spreadsheetProducts, spreadsheetRows, product, result, messages, selectedGroup, selectedSP]);
 
-  // Save each image in its own sessionStorage key (synchronous — no async race on refresh)
+  // Save each thumbnail in its own sessionStorage key (~10KB each, avoids quota issues)
   useEffect(() => {
     if (phase === 'upload') return;
     uploadedImages.forEach((img, i) => {
-      if (!img.base64) return;
+      const url = img.thumbnail || (img.base64 ? `data:image/jpeg;base64,${img.base64}` : '');
+      if (!url) return;
       try {
-        sessionStorage.setItem(`valuation-img-${i}`, `data:image/jpeg;base64,${img.base64}`);
-      } catch { /* quota — this image won't survive refresh */ }
+        sessionStorage.setItem(`valuation-img-${i}`, url);
+      } catch { /* quota */ }
     });
   }, [uploadedImages, phase]);
 
@@ -187,7 +188,11 @@ export default function App() {
       setFileType('image');
       const dataUrls = await Promise.all(files.map(readFileAsDataUrl));
       const images: UploadedImage[] = await Promise.all(
-        dataUrls.map(async u => ({ base64: await compressImageBase64(u.split(',')[1]), preview: u }))
+        dataUrls.map(async u => {
+          const b64 = await compressImageBase64(u.split(',')[1]);
+          const thumb = await compressImageBase64(b64, 160, 0.6);
+          return { base64: b64, preview: u, thumbnail: `data:image/jpeg;base64,${thumb}` };
+        })
       );
       setUploadedImages(images);
       // Pre-set single image state from first image so chatting/done phases work
@@ -314,7 +319,11 @@ export default function App() {
     try {
       const dataUrls = await Promise.all(files.map(readFileAsDataUrl));
       const newImages: UploadedImage[] = await Promise.all(
-        dataUrls.map(async u => ({ base64: await compressImageBase64(u.split(',')[1]), preview: u }))
+        dataUrls.map(async u => {
+          const b64 = await compressImageBase64(u.split(',')[1]);
+          const thumb = await compressImageBase64(b64, 160, 0.6);
+          return { base64: b64, preview: u, thumbnail: `data:image/jpeg;base64,${thumb}` };
+        })
       );
       const offset = uploadedImages.length;
       const identified: Product[] = [];
@@ -716,10 +725,10 @@ export default function App() {
                         }`}>
                         <div className="w-11 h-11 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100">
                           {g.indices.length === 1
-                            ? <img src={uploadedImages[g.indices[0]]?.preview} alt={g.name} className="w-full h-full object-cover" />
+                            ? <img src={uploadedImages[g.indices[0]]?.thumbnail || uploadedImages[g.indices[0]]?.preview} alt={g.name} className="w-full h-full object-cover" />
                             : <div className="w-full h-full grid grid-cols-2 gap-0.5">
                                 {g.indices.slice(0, 4).map(idx => (
-                                  <img key={idx} src={uploadedImages[idx]?.preview} alt="" className="w-full h-full object-cover" />
+                                  <img key={idx} src={uploadedImages[idx]?.thumbnail || uploadedImages[idx]?.preview} alt="" className="w-full h-full object-cover" />
                                 ))}
                               </div>}
                         </div>

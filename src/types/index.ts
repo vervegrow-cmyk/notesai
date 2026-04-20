@@ -46,6 +46,7 @@ export interface SpreadsheetProduct {
 export interface UploadedImage {
   base64: string;
   preview: string;
+  thumbnail?: string;
 }
 
 export interface ProductGroup {
