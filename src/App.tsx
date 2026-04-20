@@ -482,8 +482,8 @@ export default function App() {
 
         {/* ── Phase: select ── */}
         {phase === 'select' && (
-          <div className={`${hasSelection ? 'flex gap-5 items-start max-w-5xl mx-auto' : 'max-w-5xl mx-auto'}`}>
-            <div className={hasSelection ? 'w-64 flex-shrink-0' : 'w-full'}>
+          <div className={`${hasSelection ? 'flex gap-4 items-start max-w-3xl mx-auto' : 'max-w-5xl mx-auto'}`}>
+            <div className={hasSelection ? 'w-48 flex-shrink-0' : 'w-full'}>
               {!hasSelection && (
                 <div className="mb-6">
                   <h2 className="text-xl sm:text-2xl font-bold text-[#0f172a]">选择要估价的产品</h2>
@@ -551,7 +551,7 @@ export default function App() {
                       className={`w-full text-left flex items-center gap-2.5 p-2.5 rounded-xl border transition-all ${
                         selectedSP === sp ? 'border-violet-300 bg-violet-50 shadow-sm' : 'border-transparent bg-white hover:border-slate-200'
                       }`}>
-                      <div className="w-11 h-11 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100 flex items-center justify-center">
+                      <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100 flex items-center justify-center">
                         {sp.thumbnail ? (
                           <img src={sp.thumbnail} alt={sp.name} className="w-full h-full object-cover" />
                         ) : (
@@ -619,7 +619,7 @@ export default function App() {
                       className={`w-full text-left flex items-center gap-2.5 p-2.5 rounded-xl border transition-all ${
                         selectedGroup === g ? 'border-violet-300 bg-violet-50 shadow-sm' : 'border-transparent bg-white hover:border-slate-200'
                       }`}>
-                      <div className="w-11 h-11 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100">
+                      <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100">
                         {g.indices.length === 1 ? (
                           <img src={uploadedImages[g.indices[0]]?.preview} alt={g.name} className="w-full h-full object-cover" />
                         ) : (
@@ -642,7 +642,7 @@ export default function App() {
             </div>
 
             {hasSelection && (
-              <div className="w-[400px] flex-shrink-0">
+              <div className="flex-1 min-w-0">
                 <ChatPanel {...chatPanelProps} compact />
               </div>
             )}
