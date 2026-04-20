@@ -241,9 +241,9 @@ export default function App() {
       for (const file of files) {
         const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
         if (['xlsx', 'xls', 'csv'].includes(ext)) {
-          const { text, rows } = await parseSpreadsheet(file);
+          const [{ text, rows }, images] = await Promise.all([parseSpreadsheet(file), extractExcelImages(file)]);
           const summary = text.split('\n').slice(0, 8).join(' / ');
-          attachments.push({ type: 'spreadsheet', preview: '', name: file.name, rows: rows.slice(0, 20) });
+          attachments.push({ type: 'spreadsheet', preview: '', name: file.name, rows: rows.slice(0, 20), images });
           contextParts.push(`【补充表格 ${file.name}】${summary}`);
         } else if (['mp4', 'mov', 'webm'].includes(ext)) {
           const { preview: framePreview } = await extractVideoFrame(file);

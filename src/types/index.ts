@@ -60,6 +60,7 @@ export interface ChatAttachment {
   preview: string;
   name: string;
   rows?: string[][];
+  images?: string[];
 }
 
 export interface ChatMessage {
