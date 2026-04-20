@@ -312,13 +312,63 @@ function AttachmentsGrid({ attachments }: { attachments: ChatAttachment[] }) {
         </div>
       )}
       {files.map((att, i) => (
-        <div key={i} className="flex items-center gap-2 bg-white/10 rounded-lg px-2.5 py-1.5">
-          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          <span className="text-xs truncate max-w-[140px]">{att.name}</span>
-        </div>
+        <SpreadsheetPreview key={i} att={att} />
       ))}
+    </div>
+  );
+}
+
+function SpreadsheetPreview({ att }: { att: ChatAttachment }) {
+  const rows = att.rows ?? [];
+  const headers = rows[0] ?? [];
+  const dataRows = rows.slice(1);
+
+  return (
+    <div className="rounded-xl border border-slate-200 overflow-hidden bg-white text-slate-800 text-xs">
+      {/* File header */}
+      <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border-b border-slate-200">
+        <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        <span className="font-medium text-slate-700 truncate flex-1">{att.name}</span>
+        <span className="text-slate-400 flex-shrink-0">{dataRows.length} 行</span>
+      </div>
+
+      {/* Table */}
+      {rows.length > 0 && (
+        <div className="overflow-x-auto max-h-48 overflow-y-auto">
+          <table className="w-full border-collapse">
+            {headers.length > 0 && (
+              <thead>
+                <tr className="bg-slate-100 sticky top-0">
+                  {headers.slice(0, 6).map((h, i) => (
+                    <th key={i} className="px-2 py-1.5 text-left font-semibold text-slate-600 border-b border-slate-200 whitespace-nowrap max-w-[120px] truncate">
+                      {h || `列${i + 1}`}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+            )}
+            <tbody>
+              {dataRows.slice(0, 12).map((row, ri) => (
+                <tr key={ri} className={ri % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                  {row.slice(0, 6).map((cell, ci) => (
+                    <td key={ci} className="px-2 py-1.5 text-slate-700 border-b border-slate-100 whitespace-nowrap max-w-[120px] truncate">
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {dataRows.length > 12 && (
+        <div className="px-3 py-1.5 bg-slate-50 border-t border-slate-200 text-slate-400 text-center">
+          还有 {dataRows.length - 12} 行未显示
+        </div>
+      )}
     </div>
   );
 }

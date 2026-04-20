@@ -59,6 +59,7 @@ export interface ChatAttachment {
   type: 'image' | 'video' | 'spreadsheet';
   preview: string;
   name: string;
+  rows?: string[][];
 }
 
 export interface ChatMessage {
