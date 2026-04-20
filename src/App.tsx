@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import type { Phase, FileType, Product, SpreadsheetProduct, ChatMessage, ChatAttachment, PricingResult, UploadedImage, ProductGroup } from './types';
-import { extractVideoFrame, parseSpreadsheet, extractExcelImages, extractProducts } from './lib/media';
+import { extractVideoFrame, parseSpreadsheet, extractExcelImages, extractProducts, compressImageBase64 } from './lib/media';
 import { callPricingApi } from './services/pricingApi';
 import { callIdentifyApi } from './services/identifyApi';
 import { callGroupApi } from './services/groupApi';
@@ -94,7 +94,9 @@ export default function App() {
       }
       setFileType('image');
       const dataUrls = await Promise.all(files.map(readFileAsDataUrl));
-      const images: UploadedImage[] = dataUrls.map(u => ({ base64: u.split(',')[1], preview: u }));
+      const images: UploadedImage[] = await Promise.all(
+        dataUrls.map(async u => ({ base64: await compressImageBase64(u.split(',')[1]), preview: u }))
+      );
       setUploadedImages(images);
       // Pre-set single image state from first image so chatting/done phases work
       setImageBase64(images[0].base64);
@@ -149,9 +151,11 @@ export default function App() {
     if (!uploadedImages.length) return;
     setLoading(true); setError('');
     try {
-      const identified = await Promise.all(
-        uploadedImages.map(img => callIdentifyApi({ image: img.base64 }))
-      );
+      const identified: Product[] = [];
+      for (const img of uploadedImages) {
+        const result = await callIdentifyApi({ image: img.base64 });
+        identified.push(result);
+      }
       const groups = await callGroupApi(identified);
       setProductGroups(groups);
 
@@ -256,11 +260,10 @@ export default function App() {
           contextParts.push(`【补充视频】视频帧中识别到：${desc}`);
         } else {
           const dataUrl = await readFileAsDataUrl(file);
-          const pureB64 = dataUrl.split(',')[1];
+          const compressed = await compressImageBase64(dataUrl.split(',')[1]);
           attachments.push({ type: 'image', preview: dataUrl, name: file.name });
-          // 图片识别后注入描述
           let desc = file.name;
-          try { const r = await callIdentifyApi({ image: pureB64 }); desc = `${r.name}（${r.category}，品牌：${r.brand}）`; } catch {}
+          try { const r = await callIdentifyApi({ image: compressed }); desc = `${r.name}（${r.category}，品牌：${r.brand}）`; } catch {}
           contextParts.push(`【补充图片】图片中识别到：${desc}`);
         }
       }

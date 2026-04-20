@@ -3,6 +3,24 @@ import JSZip from 'jszip';
 import type { SpreadsheetProduct } from '../types';
 import { findByKeywords } from './utils';
 
+/** Compress a base64 image to max 1024px and JPEG 80% before sending to vision API. */
+export function compressImageBase64(base64: string, maxPx = 1024, quality = 0.8): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', quality).split(',')[1]);
+    };
+    img.onerror = () => resolve(base64);
+    img.src = `data:image/jpeg;base64,${base64}`;
+  });
+}
+
 export function extractVideoFrame(file: File): Promise<{ base64: string; preview: string }> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
