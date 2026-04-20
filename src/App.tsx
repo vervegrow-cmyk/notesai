@@ -636,20 +636,24 @@ export default function App() {
         {(phase === 'select' || phase === 'chatting') && (
           <div className="flex gap-5 items-start w-full">
 
-            {/* Left: product list */}
-            <div className="w-64 flex-shrink-0">
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2 px-0.5">
-                {fromSpreadsheet
-                  ? `Products (${spreadsheetProducts.length})`
-                  : `Groups (${productGroups.length})`}
-              </p>
+            {/* Left: product list card */}
+            <div className="w-64 flex-shrink-0 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[640px]">
+              {/* Card header */}
+              <div className="px-3 pt-3 pb-2 border-b border-slate-100 flex-shrink-0">
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">
+                  {fromSpreadsheet
+                    ? `Products · ${spreadsheetProducts.length}`
+                    : `Groups · ${productGroups.length}`}
+                </p>
+              </div>
 
-              <div className="space-y-1.5 max-h-[calc(100vh-12rem)] overflow-y-auto pr-1">
+              {/* Scrollable product list */}
+              <div className="flex-1 overflow-y-auto p-2 space-y-1">
                 {fromSpreadsheet
                   ? spreadsheetProducts.map((sp, i) => (
                       <button key={i} onClick={() => handleSelectProduct(sp)} disabled={loading || addingProduct}
-                        className={`w-full text-left flex items-center gap-3 p-3 rounded-xl border transition-all ${
-                          selectedSP === sp ? 'border-violet-300 bg-violet-50 shadow-sm' : 'border-transparent bg-white hover:border-slate-200'
+                        className={`w-full text-left flex items-center gap-3 p-2.5 rounded-xl border transition-all ${
+                          selectedSP === sp ? 'border-violet-300 bg-violet-50 shadow-sm' : 'border-transparent hover:bg-slate-50 hover:border-slate-200'
                         }`}>
                         <div className="w-11 h-11 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100 flex items-center justify-center">
                           {sp.thumbnail
@@ -665,8 +669,8 @@ export default function App() {
                     ))
                   : productGroups.map((g, i) => (
                       <button key={i} onClick={() => handleSelectGroup(g)} disabled={loading || addingProduct}
-                        className={`w-full text-left flex items-center gap-3 p-3 rounded-xl border transition-all ${
-                          selectedGroup === g ? 'border-violet-300 bg-violet-50 shadow-sm' : 'border-transparent bg-white hover:border-slate-200'
+                        className={`w-full text-left flex items-center gap-3 p-2.5 rounded-xl border transition-all ${
+                          selectedGroup === g ? 'border-violet-300 bg-violet-50 shadow-sm' : 'border-transparent hover:bg-slate-50 hover:border-slate-200'
                         }`}>
                         <div className="w-11 h-11 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100">
                           {g.indices.length === 1
@@ -687,18 +691,27 @@ export default function App() {
                 }
               </div>
 
-              {/* Add product button (image mode only) */}
+              {/* Add product button — anchored at bottom */}
               {!fromSpreadsheet && (
-                <>
+                <div className="p-2 border-t border-slate-100 flex-shrink-0">
                   <button
                     onClick={() => addProductInputRef.current?.click()}
                     disabled={addingProduct || loading}
-                    className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border-2 border-dashed border-slate-200 hover:border-violet-300 hover:bg-violet-50/50 text-slate-400 hover:text-violet-500 transition-all text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl border-2 border-dashed border-violet-200 hover:border-violet-400 bg-violet-50/40 hover:bg-violet-50 text-violet-400 hover:text-violet-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {addingProduct
-                      ? <><svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg> 识别中...</>
-                      : <>+ 添加产品</>
-                    }
+                    {addingProduct ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+                        <span className="text-xs font-medium">识别中…</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                        </svg>
+                        <span className="text-xs font-medium">添加新产品</span>
+                      </>
+                    )}
                   </button>
                   <input
                     ref={addProductInputRef}
@@ -712,7 +725,7 @@ export default function App() {
                       handleAddProduct(files);
                     }}
                   />
-                </>
+                </div>
               )}
             </div>
 
