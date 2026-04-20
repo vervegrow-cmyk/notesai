@@ -1,482 +1,251 @@
-# AI 库存估价工具 - 技术实现文档
+# 技术架构文档
 
-## 🎯 完整工作流程
+## 架构概览
+
+本项目采用严格分层架构，前后端职责清晰，AI 能力插件化。
 
 ```
-┌─────────────┐
-│   用户上传   │
-│   商品图片   │
-└──────┬──────┘
-       │
-       ▼
-┌─────────────────────┐
-│ 前端：FileReader     │
-│ 转换为 Base64       │
-└──────┬──────────────┘
-       │
-       ▼
-┌─────────────────────────────────┐
-│ POST /api/identify              │
-│ body: { image: "base64..." }    │
-└──────┬──────────────────────────┘
-       │
-       ▼
-┌──────────────────────────────────┐
-│ API: identify.js                 │
-│ 调用 Moonshot Vision API         │
-│ 识别商品信息                      │
-└──────┬───────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────────┐
-│ 前端：获取商品信息               │
-│ { name, category, brand }        │
-│ 进入聊天界面                      │
-└──────┬──────────────────────────┘
-       │
-       ▼
-┌──────────────────────────────────┐
-│ POST /api/chat                   │
-│ body: {                          │
-│   messages: [{                   │
-│     role: "user",                │
-│     content: "商品信息..."       │
-│   }]                             │
-│ }                                │
-└──────┬───────────────────────────┘
-       │
-       ▼
-┌───────────────────────────────────┐
-│ API: chat.js                      │
-│ 调用 Moonshot Chat API            │
-│ AI 提出第1个问题                  │
-│ 返回: { question: "...", done: false }
-└──────┬────────────────────────────┘
-       │
-       ▼ (循环 2-5 轮)
-┌──────────────────────────────────┐
-│ 用户回答问题                      │
-│ 添加到 messages 数组             │
-│ POST /api/chat                   │
-└──────┬───────────────────────────┘
-       │
-       ▼
-┌───────────────────────────────────┐
-│ 检查 done 状态                    │
-│ - 继续: 返回下一个问题            │
-│ - 结束: 返回估价结果              │
-└──────┬────────────────────────────┘
-       │
-       ▼
-┌──────────────────────────────────┐
-│ 前端：显示最终估价结果            │
-│ - 收货价                          │
-│ - 转售价                          │
-│ - 快速出货价                      │
-│ - 置信度                          │
-│ - 估价原因                        │
-└──────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│               前端 (React + Vite)        │
+│  App.tsx → services → fetch → API 路由  │
+└─────────────────┬───────────────────────┘
+                  │ HTTP POST
+┌─────────────────▼───────────────────────┐
+│           dev-server.js (Node.js)        │
+│         路由分发 → controller            │
+└─────────────────┬───────────────────────┘
+                  │
+    ┌─────────────▼──────────────┐
+    │  features/{module}/        │
+    │  controller → service      │
+    └─────────────┬──────────────┘
+                  │
+    ┌─────────────▼──────────────┐
+    │  agents/                   │
+    │  流程编排（retry、多轮）    │
+    └─────────────┬──────────────┘
+                  │
+    ┌─────────────▼──────────────┐
+    │  skills/                   │
+    │  单一 AI 能力（原子调用）   │
+    └─────────────┬──────────────┘
+                  │ HTTPS
+    ┌─────────────▼──────────────┐
+    │  Kimi API (Moonshot)        │
+    │  moonshot-v1-8k / vision    │
+    └────────────────────────────┘
 ```
 
 ---
 
-## 🔄 前端实现细节
+## 后端层级详解
 
-### 文件：`src/App.tsx`
+### skills/ — AI 能力原子层
 
-#### 状态管理
+每个 skill 只做一件事，不包含业务逻辑。
 
-```typescript
-type Phase = 'upload' | 'chatting' | 'done';
+| 文件 | 职责 |
+|------|------|
+| `kimiClient.js` | 对 Kimi API 的原始 HTTP 调用，返回文本 |
+| `kimiVision.js` | 图像识别 / 文本识别，返回标准化商品对象 |
+| `kimiGenerate.js` | 自由生成，直接返回文本 |
 
-interface Product {
-  name: string;
-  category: string;
-  brand: string;
-}
+**规则：**
+- 不访问数据库
+- 不包含业务逻辑
+- 不感知业务上下文（谁在调用、为什么调用）
 
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-}
+### agents/ — 流程编排层
 
-interface PricingResult {
-  estimated_price: string;
-  resale_price: string;
-  quick_sale_price: string;
-  confidence: string;
-  reason: string;
-}
+Agent 负责将多个 skill 组合成完整流程，处理重试、分支判断。
+
+| 文件 | 流程 |
+|------|------|
+| `pricingAgent.js` | 调用 kimiClient → 解析 JSON → 失败则 retry（最多 1 次）|
+| `identifyAgent.js` | 根据输入类型分发：image → kimiVisionIdentify，text → kimiTextIdentify |
+
+**规则：**
+- 不写具体业务逻辑
+- 不直接响应 HTTP 请求
+- 只调用 skill，协调流程
+
+### features/ — 业务模块层
+
+每个模块包含 `controller.js` + `service.js`。
+
+```
+features/pricing/
+  controller.js   ← 请求校验 + 调用 service + 返回标准响应
+  service.js      ← 业务逻辑（目前薄层，直接委托 agent）
+
+features/identify/
+  controller.js
+  service.js
+
+features/generate/
+  controller.js
+  service.js
 ```
 
-#### 三个阶段
+**controller 职责：**
+1. 校验入参（缺失则返回 `VALIDATION_ERROR`）
+2. 调用 service
+3. 捕获异常返回 `AI_ERROR`
+4. 返回统一格式 `{ success, data }` 或 `{ success, error }`
 
-**1. 上传阶段 (upload)**
-- 用户选择图片
-- FileReader 转换为 Base64
-- 验证图片大小（≤ 10MB）
+**service 职责：**
+- 业务逻辑聚合点
+- 不直接操作数据库、不直接调用 AI
+- 只调用 agent 或 repository
 
-**2. 对话阶段 (chatting)**
-- 发送 Base64 图片到 `/api/identify`
-- 获取商品信息
-- 进入多轮对话
-- 逐步添加消息到 messages 数组
+### backend/api-core/ — 响应标准层
 
-**3. 结果阶段 (done)**
-- 显示最终估价结果
-- 用户可以重新估价
+```js
+// response.js
+success(data, message?)   // → { success: true, data, message }
+fail(code, message)       // → { success: false, error: { code, message } }
 
-#### 关键函数
+// errors.js
+ErrorCode.VALIDATION_ERROR
+ErrorCode.UNAUTHORIZED
+ErrorCode.NOT_FOUND
+ErrorCode.INTERNAL_ERROR
+ErrorCode.AI_ERROR
+```
 
-```typescript
-// 处理图片选择
-handleFileChange(e: React.ChangeEvent<HTMLInputElement>)
-  ├─ 读取文件
-  ├─ 验证大小
-  ├─ FileReader 转换 Base64
-  └─ 更新 imageBase64 和 imagePreview
+### dev-server.js — HTTP 服务器
 
-// 开始估价流程
-handleStartValuation()
-  ├─ POST /api/identify
-  ├─ 获取商品信息
-  ├─ POST /api/chat (第一轮)
-  ├─ 检查 done 状态
-  └─ 切换阶段
+纯路由分发，不含业务逻辑。
 
-// 发送用户回答
-handleSendAnswer()
-  ├─ 添加用户消息到 messages
-  ├─ POST /api/chat
-  ├─ 处理 AI 响应
-  ├─ 检查是否完成
-  └─ 更新 UI
+```
+请求 → 读取 body → 查路由表 → 调用 controller → send 响应
+```
+
+路由表：
+
+| 新路由 | 别名（旧路由）| Controller |
+|--------|------------|------------|
+| `/api/pricing/calculate` | `/api/chat` | pricingController |
+| `/api/identify/analyze` | `/api/identify` | identifyController |
+| `/api/generate/content` | `/api/generate` | generateController |
+
+---
+
+## 前端层级详解
+
+### src/types/index.ts — 全局类型
+
+所有跨层共享的类型定义集中在此，包含：
+- 领域类型：`Folder`、`Note`、`Product`、`SpreadsheetProduct`、`ChatMessage`、`PricingResult`
+- UI 类型：`Phase`、`FileType`
+- API 信封类型：`ApiSuccess<T>`、`ApiError`、`ApiResponse<T>`
+
+### src/lib/ — 工具函数
+
+| 文件 | 函数 |
+|------|------|
+| `utils.ts` | `parseJson`（健壮 JSON 解析）、`findByKeywords`（表头关键词匹配）|
+| `media.ts` | `extractVideoFrame`、`parseSpreadsheet`、`extractExcelImages`、`extractProducts` |
+
+规则：纯函数，无副作用，不调用 API，不访问 DOM（除 media.ts 的 canvas/video）。
+
+### src/repositories/ — 数据访问层
+
+封装 Dexie（IndexedDB）操作，上层（store）只调用 repo 函数，不直接操作 `db`。
+
+```
+notesStore → inventoryRepo.findAllNotes() → db.notes.orderBy(...)
+notesStore → folderRepo.deleteFolder(id) → db.folders.delete(id)
+```
+
+### src/services/ — API 调用封装
+
+客户端 fetch 封装，负责：
+1. 构造请求 body
+2. 发送 POST 请求
+3. 解包响应信封（`json.data`）
+4. 将 API 错误转换为 JS Error
+
+```ts
+// App.tsx 只需关心业务数据，不处理 HTTP 细节
+const result = await callPricingApi(messages);
+if (result.done) { /* 估价完成 */ }
+```
+
+### src/ui/ — UI 组件
+
+| 层级 | 位置 | 说明 |
+|------|------|------|
+| 原子组件 | `ui/components/PriceCard.tsx` | 无副作用，纯展示 |
+| 页面块 | `ui/blocks/ChatPanel.tsx` | 含内部 ref/effect，接受 props |
+
+**规则：** UI 只负责展示，不调用 API，不包含业务逻辑。
+
+### src/App.tsx — 应用主控
+
+职责范围：
+- 管理应用阶段状态（`Phase`）
+- 调用 `lib/media.ts` 处理文件
+- 调用 `services/` 发起 AI 请求
+- 将状态和回调传递给 UI 块
+
+---
+
+## 完整调用流程示例（图片估价）
+
+```
+1. 用户上传图片
+   App.tsx → handleFileChange()
+   → lib/media.ts: 无需处理（FileReader 读取）
+   → setImageBase64(base64)
+
+2. 点击 "Start Valuation"
+   App.tsx → handleStartValuation()
+   → services/identifyApi.ts: callIdentifyApi({ image: base64 })
+   → POST /api/identify/analyze
+   → features/identify/controller.js: 校验 body.image
+   → features/identify/service.js: analyzeProduct()
+   → agents/identifyAgent.js: identifyProduct({ image })
+   → skills/kimiVision.js: kimiVisionIdentify(base64)
+   → skills/kimiClient.js: kimiChat({ model: 'moonshot-v1-8k-vision-preview', ... })
+   → Kimi API → 返回 JSON
+   → 逐层解包 → { name, category, brand }
+   → frontend: setProduct(identified)
+
+3. 进入定价对话
+   → services/pricingApi.ts: callPricingApi(messages)
+   → POST /api/pricing/calculate
+   → agents/pricingAgent.js: runPricingTurn(messages)
+   → 返回 { question, done: false }
+   → ChatPanel 显示问题
+
+4. 用户回答，重复第 3 步（最多 5 轮）
+   → 最终返回 { estimated_price, resale_price, quick_sale_price, done: true }
+   → App.tsx: setResult(data), setPhase('done')
 ```
 
 ---
 
-## 🤖 后端实现细节
-
-### API 1: `/api/identify.js` - 商品识别
-
-#### 功能流程
-
-```javascript
-export default async function handler(req, res) {
-  // 1. 验证请求方法和参数
-  if (req.method !== 'POST') return 405
-
-  const { image } = req.body
-  if (!image) return 400
-
-  // 2. 调用 Moonshot Vision API
-  const response = await fetch(MOONSHOT_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${KIMI_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: 'moonshot-v1-8k-vision-preview',
-      messages: [
-        { role: 'system', content: '你是商品识别专家...' },
-        { 
-          role: 'user', 
-          content: [
-            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${image}` } },
-            { type: 'text', text: '识别商品，返回 JSON...' }
-          ]
-        }
-      ]
-    })
-  })
-
-  // 3. 解析 AI 响应
-  const text = response.json().choices[0].message.content
-  const parsed = parseJson(text)
-
-  // 4. 返回结构化数据
-  return res.status(200).json({
-    name: parsed.name || '未知商品',
-    category: parsed.category || '其他',
-    brand: parsed.brand || '未知'
-  })
-}
-```
-
-#### 关键点
-- 使用 Vision API 模型处理图片
-- 严格的 JSON 解析（处理 AI 格式变化）
-- 容错处理（解析失败时返回默认值）
-
----
-
-### API 2: `/api/chat.js` - 多轮对话
-
-#### System Prompt（核心规则）
+## 数据流（笔记模块）
 
 ```
-你是一个专业库存收货商，擅长估价清仓商品。
-
-规则：
-1. 每次只问1个关键问题
-2. 最多5轮问答，第5轮必须给出最终估价
-3. 问题必须影响价格，不要问废话
-4. 始终用JSON格式回复，不要任何多余文字
-
-重点信息：品牌、成色、使用时长、包装情况、市场需求
-
-未结束时输出：{"question":"问题","done":false}
-结束时输出：{
-  "estimated_price":"$10-$15",
-  "resale_price":"$20-$30",
-  "quick_sale_price":"$8-$10",
-  "confidence":"medium",
-  "reason":"原因",
-  "done":true
-}
-```
-
-#### 功能流程
-
-```javascript
-export default async function handler(req, res) {
-  // 1. 验证请求
-  if (req.method !== 'POST') return 405
-  
-  const { messages } = req.body
-  if (!Array.isArray(messages)) return 400
-
-  // 2. 调用 Moonshot Chat API
-  const response = await fetch(MOONSHOT_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${KIMI_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: 'moonshot-v1-8k',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        ...messages  // 保持对话历史
-      ]
-    })
-  })
-
-  // 3. 解析 AI 响应
-  const text = response.json().choices[0].message.content
-  const parsed = parseJson(text)
-
-  // 4. 返回 JSON 响应
-  return res.status(200).json(parsed)
-}
-```
-
-#### 关键点
-- System Prompt 控制 AI 行为
-- 保持完整的 messages 历史（上下文）
-- JSON 严格格式要求
-- 轮数限制确保流程终止
-
----
-
-## 📊 数据流示例
-
-### 第1轮：上传图片
-
-**前端请求：**
-```json
-{
-  "image": "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgG..."
-}
-```
-
-**API 响应：**
-```json
-{
-  "name": "iPhone 13 Pro",
-  "category": "电子产品",
-  "brand": "Apple"
-}
-```
-
-**前端处理：**
-```typescript
-messages = [
-  {
-    role: 'user',
-    content: '商品信息：名称=iPhone 13 Pro，类别=电子产品，品牌=Apple'
-  }
-]
-```
-
-### 第1轮对话请求
-
-**前端请求：**
-```json
-{
-  "messages": [
-    {
-      "role": "user",
-      "content": "商品信息：名称=iPhone 13 Pro，类别=电子产品，品牌=Apple"
-    }
-  ]
-}
-```
-
-**API 响应：**
-```json
-{
-  "question": "这台 iPhone 13 Pro 的屏幕成色如何？有没有划痕或损伤？",
-  "done": false
-}
-```
-
-### 第2轮对话请求
-
-**前端请求：**
-```json
-{
-  "messages": [
-    {
-      "role": "user",
-      "content": "商品信息：名称=iPhone 13 Pro，类别=电子产品，品牌=Apple"
-    },
-    {
-      "role": "assistant",
-      "content": "这台 iPhone 13 Pro 的屏幕成色如何？有没有划痕或损伤？"
-    },
-    {
-      "role": "user",
-      "content": "屏幕成色很好，没有划痕，就是电池健康度是85%"
-    }
-  ]
-}
-```
-
-**API 响应：**
-```json
-{
-  "question": "手机是否还有原装配件？包括充电器、数据线、包装盒等？",
-  "done": false
-}
-```
-
-### 最终估价（第5轮）
-
-**API 响应：**
-```json
-{
-  "estimated_price": "$450-$500",
-  "resale_price": "$550-$650",
-  "quick_sale_price": "$400-$450",
-  "confidence": "high",
-  "reason": "iPhone 13 Pro 屏幕无损伤，电池健康度85%。目前二手市场价格 $550-650，考虑到电池衰减，建议收购价 $450-500。缺少原装配件会降低价值约 5-10%。",
-  "done": true
-}
+用户操作
+  → useNotesStore (Zustand)
+    → repositories/inventoryRepo.ts
+    → repositories/folderRepo.ts
+      → services/db.ts (Dexie instance)
+        → IndexedDB (浏览器本地存储)
 ```
 
 ---
 
-## 🔧 本地开发流程
+## 技术选型说明
 
-### 1. 启动开发环境
-
-```bash
-npm run dev
-```
-
-会同时启动：
-- Vite 开发服务器（端口 5173）
-- dev-server.js（端口 3001，代理 API）
-
-### 2. 测试流程
-
-1. 打开 `http://localhost:5173`
-2. 上传商品图片
-3. 观看 Network 标签查看 API 调用
-4. 验证响应格式
-
-### 3. 调试技巧
-
-```typescript
-// 在 App.tsx 中添加日志
-console.log('Messages:', messages)
-console.log('API Response:', response)
-
-// 在浏览器 DevTools 中查看
-// - Network 标签：请求/响应
-// - Console 标签：错误信息
-// - Storage 标签：本地存储
-```
-
----
-
-## 🚀 构建与部署流程
-
-### 本地构建
-
-```bash
-npm run build
-```
-
-输出：
-- `dist/` - 前端构建结果
-- API 文件自动转换为 Vercel Functions
-
-### Vercel 部署
-
-1. **自动检测配置**
-   - `vercel.json` 定义构建和输出目录
-   - 框架自动设置为 Vite
-
-2. **环境变量**
-   - Vercel Dashboard 添加 `KIMI_API_KEY`
-
-3. **自动部署**
-   - 推送到 GitHub
-   - Vercel 自动构建和部署
-
-4. **API 部署**
-   - `/api/*.js` 文件自动变成 Vercel Serverless Functions
-   - URL 自动映射：`/api/identify` → `https://your-domain.vercel.app/api/identify`
-
----
-
-## 📈 性能指标
-
-| 指标 | 目标 | 当前 |
-|-----|------|------|
-| 首屏加载 | < 2s | ~1.5s |
-| API 响应 | < 5s | ~2-3s |
-| 图片识别 | < 10s | ~5-8s |
-| 对话响应 | < 5s | ~2-4s |
-
----
-
-## 🔐 安全考虑
-
-### API Key 保护
-- ✅ 只在后端存储（`.env`）
-- ✅ 不暴露到前端代码
-- ✅ Vercel 环境变量加密存储
-
-### 请求验证
-- ✅ 方法检查（POST only）
-- ✅ 参数验证（非空检查）
-- ✅ 大小限制（图片 ≤ 10MB）
-
-### 错误处理
-- ✅ 不暴露内部错误信息
-- ✅ 通用错误提示给用户
-- ✅ 服务器日志记录详细错误
-
----
-
-## 📚 相关资源
-
-- [Moonshot API 文档](https://platform.moonshot.cn/docs)
-- [Vite 文档](https://vite.dev)
-- [React 文档](https://react.dev)
-- [Vercel 部署指南](https://vercel.com/docs)
-- [TypeScript 文档](https://www.typescriptlang.org/docs)
+| 决策 | 选择 | 原因 |
+|------|------|------|
+| 前端框架 | React 19 + Vite 8 | 快速热更新，生态成熟 |
+| 样式 | Tailwind CSS v4 | 零运行时，原子类 |
+| 本地存储 | Dexie (IndexedDB) | 客户端离线数据，无需服务端 DB |
+| 状态管理 | Zustand | 轻量，无 boilerplate |
+| AI 服务 | Kimi (Moonshot) | 支持中文场景，有 vision 能力 |
+| API 服务 | Node.js HTTP（原生）| 无框架依赖，轻量 |
