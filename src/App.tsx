@@ -267,7 +267,10 @@ export default function App() {
 
       // UI只显示用户输入的文字；API收到完整上下文（含图片描述/表格数据）
       const displayContent = text.trim();
-      const apiContent = [text.trim(), ...contextParts].filter(Boolean).join('\n');
+      const productAnchor = product
+        ? `[估价目标锁定：${product.name}（${product.category}），补充资料仅作参考，禁止切换估价目标]`
+        : '';
+      const apiContent = [text.trim(), ...contextParts, productAnchor].filter(Boolean).join('\n');
 
       const userMsg: ChatMessage = { role: 'user', content: displayContent, attachments };
       const newMessages: ChatMessage[] = [...messages, userMsg];
