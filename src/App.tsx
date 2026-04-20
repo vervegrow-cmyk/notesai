@@ -31,6 +31,16 @@ function readStoredView(): AppView {
   return (v === 'cart' || v === 'orders') ? v : 'valuation';
 }
 
+const _vs = (() => {
+  try { const r = sessionStorage.getItem('valuation-session'); return r ? JSON.parse(r) : null; }
+  catch { return null; }
+})();
+
+function saveSession(data: object) {
+  try { sessionStorage.setItem('valuation-session', JSON.stringify(data)); } catch { /* quota */ }
+}
+function clearSession() { sessionStorage.removeItem('valuation-session'); }
+
 export default function App() {
   const [appView, setAppViewState] = useState<AppView>(readStoredView);
   const [showMethodModal, setShowMethodModal] = useState(false);
@@ -44,32 +54,59 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('appView', appView);
   }, [appView]);
-  const [phase, setPhase] = useState<Phase>('upload');
-  const [fileType, setFileType] = useState<FileType>('image');
+
+  // ── Session persistence (survives same-tab refresh) ───────────────────────
+  useEffect(() => {
+    if (phase === 'upload') { clearSession(); return; }
+    saveSession({
+      phase, fileType, imageBase64,
+      uploadedImages: uploadedImages.map(img => img.base64),
+      productGroups,
+      spreadsheetProducts: spreadsheetProducts.map(sp => ({ ...sp, thumbnail: sp.thumbnail?.startsWith('blob:') ? undefined : sp.thumbnail })),
+      spreadsheetRows,
+      product, result,
+      messages: messages.map(m => ({ role: m.role, content: m.content })),
+      selGroupIdx: selectedGroup ? productGroups.indexOf(selectedGroup) : -1,
+      selSPIdx: selectedSP ? spreadsheetProducts.indexOf(selectedSP) : -1,
+    });
+  }, [phase, fileType, imageBase64, uploadedImages, productGroups, spreadsheetProducts, spreadsheetRows, product, result, messages, selectedGroup, selectedSP]);
+
+  const [phase, setPhase] = useState<Phase>(_vs?.phase ?? 'upload');
+  const [fileType, setFileType] = useState<FileType>(_vs?.fileType ?? 'image');
 
   // Single-image / video state (also used as "current" image after group select)
-  const [, setImageBase64] = useState('');
-  const [imagePreview, setImagePreview] = useState('');
+  const [imageBase64, setImageBase64] = useState<string>(_vs?.imageBase64 ?? '');
+  const [imagePreview, setImagePreview] = useState<string>(
+    _vs?.imageBase64 ? `data:image/jpeg;base64,${_vs.imageBase64}` : ''
+  );
 
   // Multi-image state
-  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
-  const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
-  const [selectedGroup, setSelectedGroup] = useState<ProductGroup | null>(null);
+  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>(
+    () => (_vs?.uploadedImages ?? []).map((b64: string) => ({ base64: b64, preview: `data:image/jpeg;base64,${b64}` }))
+  );
+  const [productGroups, setProductGroups] = useState<ProductGroup[]>(_vs?.productGroups ?? []);
+  const [selectedGroup, setSelectedGroup] = useState<ProductGroup | null>(
+    () => { const g = _vs?.productGroups; const i = _vs?.selGroupIdx ?? -1; return g && i >= 0 ? g[i] ?? null : null; }
+  );
 
   // Spreadsheet state
-  const [spreadsheetRows, setSpreadsheetRows] = useState<string[][]>([]);
-  const [spreadsheetProducts, setSpreadsheetProducts] = useState<SpreadsheetProduct[]>([]);
-  const [selectedSP, setSelectedSP] = useState<SpreadsheetProduct | null>(null);
+  const [spreadsheetRows, setSpreadsheetRows] = useState<string[][]>(_vs?.spreadsheetRows ?? []);
+  const [spreadsheetProducts, setSpreadsheetProducts] = useState<SpreadsheetProduct[]>(_vs?.spreadsheetProducts ?? []);
+  const [selectedSP, setSelectedSP] = useState<SpreadsheetProduct | null>(
+    () => { const p = _vs?.spreadsheetProducts; const i = _vs?.selSPIdx ?? -1; return p && i >= 0 ? p[i] ?? null : null; }
+  );
 
   // Chat state
-  const [product, setProduct] = useState<Product | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [product, setProduct] = useState<Product | null>(_vs?.product ?? null);
+  const [messages, setMessages] = useState<ChatMessage[]>(_vs?.messages ?? []);
   const [userInput, setUserInput] = useState('');
-  const [result, setResult] = useState<PricingResult | null>(null);
+  const [result, setResult] = useState<PricingResult | null>(_vs?.result ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [uploadKey, setUploadKey] = useState(0);
+  const [addingProduct, setAddingProduct] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const addProductInputRef = useRef<HTMLInputElement>(null);
 
   function revokeThumbnails(products: SpreadsheetProduct[]) {
     products.forEach(p => { if (p.thumbnail?.startsWith('blob:')) URL.revokeObjectURL(p.thumbnail); });
@@ -86,6 +123,7 @@ export default function App() {
     setResult(null); setError('');
     setUploadKey(k => k + 1);
     localStorage.setItem('appView', 'valuation');
+    clearSession();
   }
 
   function closeChatPanel() {
@@ -183,6 +221,7 @@ export default function App() {
         const g = groups[0] ?? { indices: [0], ...identified[0] };
         const prod = { name: g.name, category: g.category, brand: g.brand };
         setProduct(prod);
+        setSelectedGroup(g);
         const firstIdx = g.indices[0] ?? 0;
         setImageBase64(uploadedImages[firstIdx].base64);
         setImagePreview(uploadedImages[firstIdx].preview);
@@ -232,6 +271,37 @@ export default function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : '请求失败，请重试');
     } finally { setLoading(false); }
+  }
+
+  async function handleAddProduct(files: File[]) {
+    if (!files.length || addingProduct) return;
+    setAddingProduct(true);
+    setError('');
+    try {
+      const dataUrls = await Promise.all(files.map(readFileAsDataUrl));
+      const newImages: UploadedImage[] = await Promise.all(
+        dataUrls.map(async u => ({ base64: await compressImageBase64(u.split(',')[1]), preview: u }))
+      );
+      const offset = uploadedImages.length;
+      const identified: Product[] = [];
+      for (const img of newImages) {
+        const r = await callIdentifyApi({ image: img.base64 });
+        identified.push(r);
+      }
+      let newGroups: ProductGroup[];
+      if (identified.length === 1) {
+        newGroups = [{ name: identified[0].name, category: identified[0].category, brand: identified[0].brand, indices: [offset] }];
+      } else {
+        const grouped = await callGroupApi(identified);
+        newGroups = grouped.map(g => ({ ...g, indices: g.indices.map(i => i + offset) }));
+      }
+      setUploadedImages(prev => [...prev, ...newImages]);
+      setProductGroups(prev => [...prev, ...newGroups]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '识别失败，请重试');
+    } finally {
+      setAddingProduct(false);
+    }
   }
 
   async function handleSendAnswer() {
@@ -559,87 +629,85 @@ export default function App() {
 
         {/* ── Phase: select / chatting — unified sidebar+chat layout ── */}
         {(phase === 'select' || phase === 'chatting') && (
-          <div className="flex gap-4 items-start max-w-2xl mx-auto">
+          <div className="flex gap-4 items-start max-w-4xl mx-auto">
 
-            {/* Left: product list, always visible top-to-bottom */}
-            <div className="w-44 flex-shrink-0">
+            {/* Left: product list */}
+            <div className="w-56 flex-shrink-0">
               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2 px-0.5">
-                {phase === 'chatting'
-                  ? 'Product'
-                  : fromSpreadsheet
-                    ? `Products (${spreadsheetProducts.length})`
-                    : `Groups (${productGroups.length})`}
+                {fromSpreadsheet
+                  ? `Products (${spreadsheetProducts.length})`
+                  : `Groups (${productGroups.length})`}
               </p>
 
-              {/* Single product (chatting phase) */}
-              {phase === 'chatting' && product && (
-                <div className="flex items-center gap-2.5 p-2.5 rounded-xl border border-violet-300 bg-violet-50 shadow-sm">
-                  <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100 flex items-center justify-center relative">
-                    {imagePreview
-                      ? <img src={imagePreview} alt={product.name} className="w-full h-full object-cover" />
-                      : <span className="text-base opacity-30">📦</span>}
-                    {fileType === 'video' && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/25">
-                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-violet-700 truncate">{product.name}</p>
-                    <p className="text-[10px] text-slate-400 truncate">{product.category}</p>
-                  </div>
-                  <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${result ? 'bg-green-500' : 'bg-violet-500 animate-pulse'}`} />
-                </div>
-              )}
+              <div className="space-y-1.5 max-h-[calc(100vh-12rem)] overflow-y-auto pr-1">
+                {fromSpreadsheet
+                  ? spreadsheetProducts.map((sp, i) => (
+                      <button key={i} onClick={() => handleSelectProduct(sp)} disabled={loading || addingProduct}
+                        className={`w-full text-left flex items-center gap-2.5 p-2.5 rounded-xl border transition-all ${
+                          selectedSP === sp ? 'border-violet-300 bg-violet-50 shadow-sm' : 'border-transparent bg-white hover:border-slate-200'
+                        }`}>
+                        <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100 flex items-center justify-center">
+                          {sp.thumbnail
+                            ? <img src={sp.thumbnail} alt={sp.name} className="w-full h-full object-cover" />
+                            : <span className="text-base opacity-30">📦</span>}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs font-semibold truncate ${selectedSP === sp ? 'text-violet-700' : 'text-slate-800'}`}>{sp.name}</p>
+                          <p className="text-[10px] text-slate-400 truncate">{sp.category}</p>
+                        </div>
+                        {selectedSP === sp && <div className="w-1.5 h-1.5 rounded-full bg-violet-500 flex-shrink-0 animate-pulse" />}
+                      </button>
+                    ))
+                  : productGroups.map((g, i) => (
+                      <button key={i} onClick={() => handleSelectGroup(g)} disabled={loading || addingProduct}
+                        className={`w-full text-left flex items-center gap-2.5 p-2.5 rounded-xl border transition-all ${
+                          selectedGroup === g ? 'border-violet-300 bg-violet-50 shadow-sm' : 'border-transparent bg-white hover:border-slate-200'
+                        }`}>
+                        <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100">
+                          {g.indices.length === 1
+                            ? <img src={uploadedImages[g.indices[0]]?.preview} alt={g.name} className="w-full h-full object-cover" />
+                            : <div className="w-full h-full grid grid-cols-2 gap-0.5">
+                                {g.indices.slice(0, 4).map(idx => (
+                                  <img key={idx} src={uploadedImages[idx]?.preview} alt="" className="w-full h-full object-cover" />
+                                ))}
+                              </div>}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs font-semibold truncate ${selectedGroup === g ? 'text-violet-700' : 'text-slate-800'}`}>{g.name}</p>
+                          <p className="text-[10px] text-slate-400">{g.indices.length} 图</p>
+                        </div>
+                        {selectedGroup === g && <div className="w-1.5 h-1.5 rounded-full bg-violet-500 flex-shrink-0 animate-pulse" />}
+                      </button>
+                    ))
+                }
+              </div>
 
-              {/* Spreadsheet products */}
-              {phase === 'select' && fromSpreadsheet && (
-                <div className="space-y-1.5 max-h-[calc(100vh-8rem)] overflow-y-auto pr-1">
-                  {spreadsheetProducts.map((sp, i) => (
-                    <button key={i} onClick={() => handleSelectProduct(sp)} disabled={loading}
-                      className={`w-full text-left flex items-center gap-2.5 p-2.5 rounded-xl border transition-all ${
-                        selectedSP === sp ? 'border-violet-300 bg-violet-50 shadow-sm' : 'border-transparent bg-white hover:border-slate-200'
-                      }`}>
-                      <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100 flex items-center justify-center">
-                        {sp.thumbnail
-                          ? <img src={sp.thumbnail} alt={sp.name} className="w-full h-full object-cover" />
-                          : <span className="text-base opacity-30">📦</span>}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-xs font-semibold truncate ${selectedSP === sp ? 'text-violet-700' : 'text-slate-800'}`}>{sp.name}</p>
-                        <p className="text-[10px] text-slate-400 truncate">{sp.category}</p>
-                      </div>
-                      {selectedSP === sp && <div className="w-1.5 h-1.5 rounded-full bg-violet-500 flex-shrink-0" />}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Image groups */}
-              {phase === 'select' && !fromSpreadsheet && (
-                <div className="space-y-1.5 max-h-[calc(100vh-8rem)] overflow-y-auto pr-1">
-                  {productGroups.map((g, i) => (
-                    <button key={i} onClick={() => handleSelectGroup(g)} disabled={loading}
-                      className={`w-full text-left flex items-center gap-2.5 p-2.5 rounded-xl border transition-all ${
-                        selectedGroup === g ? 'border-violet-300 bg-violet-50 shadow-sm' : 'border-transparent bg-white hover:border-slate-200'
-                      }`}>
-                      <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100">
-                        {g.indices.length === 1
-                          ? <img src={uploadedImages[g.indices[0]]?.preview} alt={g.name} className="w-full h-full object-cover" />
-                          : <div className="w-full h-full grid grid-cols-2 gap-0.5">
-                              {g.indices.slice(0, 4).map(idx => (
-                                <img key={idx} src={uploadedImages[idx]?.preview} alt="" className="w-full h-full object-cover" />
-                              ))}
-                            </div>}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-xs font-semibold truncate ${selectedGroup === g ? 'text-violet-700' : 'text-slate-800'}`}>{g.name}</p>
-                        <p className="text-[10px] text-slate-400">{g.indices.length} 图</p>
-                      </div>
-                      {selectedGroup === g && <div className="w-1.5 h-1.5 rounded-full bg-violet-500 flex-shrink-0" />}
-                    </button>
-                  ))}
-                </div>
+              {/* Add product button (image mode only) */}
+              {!fromSpreadsheet && (
+                <>
+                  <button
+                    onClick={() => addProductInputRef.current?.click()}
+                    disabled={addingProduct || loading}
+                    className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border-2 border-dashed border-slate-200 hover:border-violet-300 hover:bg-violet-50/50 text-slate-400 hover:text-violet-500 transition-all text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {addingProduct
+                      ? <><svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg> 识别中...</>
+                      : <>+ 添加产品</>
+                    }
+                  </button>
+                  <input
+                    ref={addProductInputRef}
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    className="hidden"
+                    onChange={e => {
+                      const files = Array.from(e.target.files ?? []);
+                      e.target.value = '';
+                      handleAddProduct(files);
+                    }}
+                  />
+                </>
               )}
             </div>
 
@@ -648,7 +716,7 @@ export default function App() {
               {(phase === 'chatting' || hasSelection) ? (
                 <ChatPanel {...chatPanelProps} compact />
               ) : (
-                <div className="bg-white rounded-2xl border border-slate-200 h-[400px] flex flex-col items-center justify-center text-center px-6 gap-3">
+                <div className="bg-white rounded-2xl border border-slate-200 h-[520px] flex flex-col items-center justify-center text-center px-6 gap-3">
                   {error && <p className="text-sm text-red-500">⚠️ {error}</p>}
                   <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-2xl">👈</div>
                   <p className="text-sm font-semibold text-slate-700">
