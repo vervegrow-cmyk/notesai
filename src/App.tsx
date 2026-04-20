@@ -108,6 +108,8 @@ export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>(_vs?.messages ?? []);
   const [userInput, setUserInput] = useState('');
   const [result, setResult] = useState<PricingResult | null>(_vs?.result ?? null);
+  const [groupResults, setGroupResults] = useState<Record<number, PricingResult>>(_vs?.groupResults ?? {});
+  const [spResults, setSpResults] = useState<Record<number, PricingResult>>(_vs?.spResults ?? {});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [uploadKey, setUploadKey] = useState(0);
@@ -125,12 +127,25 @@ export default function App() {
       productGroups,
       spreadsheetProducts: spreadsheetProducts.map(sp => ({ ...sp, thumbnail: sp.thumbnail?.startsWith('blob:') ? undefined : sp.thumbnail })),
       spreadsheetRows,
-      product, result,
+      product, result, groupResults, spResults,
       messages: messages.map(m => ({ role: m.role, content: m.content })),
       selGroupIdx: selectedGroup ? productGroups.indexOf(selectedGroup) : -1,
       selSPIdx: selectedSP ? spreadsheetProducts.indexOf(selectedSP) : -1,
     });
   }, [phase, fileType, imageBase64, uploadedImages, productGroups, spreadsheetProducts, spreadsheetRows, product, result, messages, selectedGroup, selectedSP]);
+
+  // Record completed valuation result for each product in the sidebar
+  useEffect(() => {
+    if (!result) return;
+    if (selectedGroup) {
+      const i = productGroups.indexOf(selectedGroup);
+      if (i >= 0) setGroupResults(prev => ({ ...prev, [i]: result }));
+    } else if (selectedSP) {
+      const i = spreadsheetProducts.indexOf(selectedSP);
+      if (i >= 0) setSpResults(prev => ({ ...prev, [i]: result }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result]);
 
   // Save each thumbnail to localStorage (survives refresh reliably)
   useEffect(() => {
@@ -156,7 +171,7 @@ export default function App() {
     setSpreadsheetRows([]); setSpreadsheetProducts([]);
     setSelectedSP(null); setProduct(null);
     setMessages([]); setUserInput('');
-    setResult(null); setError('');
+    setResult(null); setGroupResults({}); setSpResults({}); setError('');
     setUploadKey(k => k + 1);
     localStorage.setItem('appView', 'valuation');
     clearSession();
@@ -763,7 +778,9 @@ export default function App() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className={`text-sm font-semibold truncate ${selectedSP === sp ? 'text-violet-700' : 'text-slate-800'}`}>{sp.name}</p>
-                          <p className="text-xs text-slate-400 truncate">{sp.category}</p>
+                          {spResults[i]
+                            ? <p className="text-xs font-semibold text-emerald-600 truncate">{spResults[i].estimated_price}</p>
+                            : <p className="text-xs text-slate-400 truncate">{sp.category}</p>}
                         </div>
                         {selectedSP === sp && <div className="w-2 h-2 rounded-full bg-violet-500 flex-shrink-0 animate-pulse" />}
                       </button>
@@ -784,7 +801,9 @@ export default function App() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className={`text-sm font-semibold truncate ${selectedGroup === g ? 'text-violet-700' : 'text-slate-800'}`}>{g.name}</p>
-                          <p className="text-xs text-slate-400">{g.indices.length} 图</p>
+                          {groupResults[i]
+                            ? <p className="text-xs font-semibold text-emerald-600">{groupResults[i].estimated_price}</p>
+                            : <p className="text-xs text-slate-400">{g.indices.length} 图</p>}
                         </div>
                         {selectedGroup === g && <div className="w-2 h-2 rounded-full bg-violet-500 flex-shrink-0 animate-pulse" />}
                       </button>
