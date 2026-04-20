@@ -31,24 +31,6 @@ function readStoredView(): AppView {
   return (v === 'cart' || v === 'orders') ? v : 'valuation';
 }
 
-function compressThumbnailForStorage(base64: string): Promise<string> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const MAX = 256;
-      const scale = Math.min(MAX / img.width, MAX / img.height, 1);
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      const ctx = canvas.getContext('2d');
-      if (!ctx) { resolve(`data:image/jpeg;base64,${base64}`); return; }
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', 0.7));
-    };
-    img.onerror = () => resolve(`data:image/jpeg;base64,${base64}`);
-    img.src = `data:image/jpeg;base64,${base64}`;
-  });
-}
 
 const _vs = (() => {
   try {
@@ -56,11 +38,14 @@ const _vs = (() => {
     if (!r) return null;
     const d = JSON.parse(r);
     if (!d || typeof d !== 'object' || !['select', 'chatting'].includes(d.phase)) return null;
-    // Load image thumbnails from individual keys to avoid large JSON
-    const count = typeof d.imageCount === 'number' ? d.imageCount : 0;
-    d.uploadedImages = Array.from({ length: count }, (_, i) =>
-      sessionStorage.getItem(`valuation-img-${i}`) ?? ''
-    ).filter(Boolean);
+    if (typeof d.imageCount === 'number') {
+      // New format: load images from individual sessionStorage keys
+      d.uploadedImages = Array.from({ length: d.imageCount }, (_, i) =>
+        sessionStorage.getItem(`valuation-img-${i}`) ?? ''
+      ).filter(Boolean);
+    }
+    // Old format: d.uploadedImages already set in JSON — keep it as-is
+    if (!Array.isArray(d.uploadedImages)) d.uploadedImages = [];
     return d;
   } catch { return null; }
 })();
@@ -146,15 +131,14 @@ export default function App() {
     });
   }, [phase, fileType, imageBase64, uploadedImages, productGroups, spreadsheetProducts, spreadsheetRows, product, result, messages, selectedGroup, selectedSP]);
 
-  // Save each image as a tiny 256px thumbnail in its own sessionStorage key
+  // Save each image in its own sessionStorage key (synchronous — no async race on refresh)
   useEffect(() => {
     if (phase === 'upload') return;
-    uploadedImages.forEach(async (img, i) => {
+    uploadedImages.forEach((img, i) => {
       if (!img.base64) return;
       try {
-        const tiny = await compressThumbnailForStorage(img.base64);
-        sessionStorage.setItem(`valuation-img-${i}`, tiny);
-      } catch { /* quota */ }
+        sessionStorage.setItem(`valuation-img-${i}`, `data:image/jpeg;base64,${img.base64}`);
+      } catch { /* quota — this image won't survive refresh */ }
     });
   }, [uploadedImages, phase]);
 
