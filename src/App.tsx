@@ -330,21 +330,31 @@ export default function App() {
           return { base64: b64, preview: u, thumbnail: `data:image/jpeg;base64,${thumb}` };
         })
       );
-      const offset = uploadedImages.length;
       const identified: Product[] = [];
       for (const img of newImages) {
         const r = await callIdentifyApi({ image: img.base64 });
         identified.push(r);
       }
-      let newGroups: ProductGroup[];
-      if (identified.length === 1) {
-        newGroups = [{ name: identified[0].name, category: identified[0].category, brand: identified[0].brand, indices: [offset], thumbnail: newImages[0]?.thumbnail || '' }];
+      if (fromSpreadsheet) {
+        const newSPs: SpreadsheetProduct[] = identified.map((p, i) => ({
+          name: p.name, category: p.category, brand: p.brand,
+          rowText: `名称=${p.name}，类别=${p.category}，品牌=${p.brand}`,
+          details: { '名称': p.name, '类别': p.category, '品牌': p.brand },
+          thumbnail: newImages[i]?.thumbnail,
+        }));
+        setSpreadsheetProducts(prev => [...prev, ...newSPs]);
       } else {
-        const grouped = await callGroupApi(identified);
-        newGroups = grouped.map(g => ({ ...g, indices: g.indices.map(i => i + offset), thumbnail: newImages[g.indices[0] ?? 0]?.thumbnail || '' }));
+        const offset = uploadedImages.length;
+        let newGroups: ProductGroup[];
+        if (identified.length === 1) {
+          newGroups = [{ name: identified[0].name, category: identified[0].category, brand: identified[0].brand, indices: [offset], thumbnail: newImages[0]?.thumbnail || '' }];
+        } else {
+          const grouped = await callGroupApi(identified);
+          newGroups = grouped.map(g => ({ ...g, indices: g.indices.map(i => i + offset), thumbnail: newImages[g.indices[0] ?? 0]?.thumbnail || '' }));
+        }
+        setUploadedImages(prev => [...prev, ...newImages]);
+        setProductGroups(prev => [...prev, ...newGroups]);
       }
-      setUploadedImages(prev => [...prev, ...newImages]);
-      setProductGroups(prev => [...prev, ...newGroups]);
     } catch (err) {
       setError(err instanceof Error ? err.message : '识别失败，请重试');
     } finally {
@@ -469,8 +479,8 @@ export default function App() {
             </span>
           </button>
           <div className="flex items-center gap-2">
-            {/* Add product shortcut — visible during select/chatting with images */}
-            {appView === 'valuation' && (phase === 'select' || phase === 'chatting') && !fromSpreadsheet && (
+            {/* Add product shortcut — visible during select/chatting */}
+            {appView === 'valuation' && (phase === 'select' || phase === 'chatting') && (
               <button
                 onClick={() => addProductInputRef.current?.click()}
                 disabled={addingProduct || loading}
@@ -747,45 +757,43 @@ export default function App() {
                 }
               </div>
 
-              {/* Add product upload zone — anchored at bottom */}
-              {!fromSpreadsheet && (
-                <div className="p-2 pt-0 flex-shrink-0">
-                  <button
-                    onClick={() => addProductInputRef.current?.click()}
-                    disabled={addingProduct || loading}
-                    className="w-full rounded-xl border-2 border-dashed border-slate-200 hover:border-violet-300 bg-slate-50 hover:bg-violet-50/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed p-3"
-                  >
-                    {addingProduct ? (
-                      <div className="flex flex-col items-center gap-1.5 py-1">
-                        <svg className="animate-spin h-5 w-5 text-violet-500" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
-                        <span className="text-xs text-slate-500">AI 识别中…</span>
+              {/* Add product upload zone — anchored at bottom, always visible */}
+              <div className="p-2 pt-0 flex-shrink-0">
+                <button
+                  onClick={() => addProductInputRef.current?.click()}
+                  disabled={addingProduct || loading}
+                  className="w-full rounded-xl border-2 border-dashed border-slate-200 hover:border-violet-300 bg-slate-50 hover:bg-violet-50/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed p-3"
+                >
+                  {addingProduct ? (
+                    <div className="flex flex-col items-center gap-1.5 py-1">
+                      <svg className="animate-spin h-5 w-5 text-violet-500" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+                      <span className="text-xs text-slate-500">AI 识别中…</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1.5">
+                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-100 to-indigo-100 flex items-center justify-center">
+                        <svg className="w-4 h-4 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                        </svg>
                       </div>
-                    ) : (
-                      <div className="flex flex-col items-center gap-1.5">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-100 to-indigo-100 flex items-center justify-center">
-                          <svg className="w-4 h-4 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                          </svg>
-                        </div>
-                        <p className="text-xs font-semibold text-slate-600">添加新产品</p>
-                        <p className="text-[10px] text-slate-400">📷 图片（多选）· max 10MB</p>
-                      </div>
-                    )}
-                  </button>
-                  <input
-                    ref={addProductInputRef}
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    className="hidden"
-                    onChange={e => {
-                      const files = Array.from(e.target.files ?? []);
-                      e.target.value = '';
-                      handleAddProduct(files);
-                    }}
-                  />
-                </div>
-              )}
+                      <p className="text-xs font-semibold text-slate-600">添加新产品</p>
+                      <p className="text-[10px] text-slate-400">📷 图片（多选）· max 10MB</p>
+                    </div>
+                  )}
+                </button>
+                <input
+                  ref={addProductInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => {
+                    const files = Array.from(e.target.files ?? []);
+                    e.target.value = '';
+                    handleAddProduct(files);
+                  }}
+                />
+              </div>
             </div>
 
             {/* Right: chat panel or select placeholder */}
