@@ -1,0 +1,7 @@
+export const ErrorCode = {
+  VALIDATION_ERROR: 'VALIDATION_ERROR',
+  UNAUTHORIZED:     'UNAUTHORIZED',
+  NOT_FOUND:        'NOT_FOUND',
+  INTERNAL_ERROR:   'INTERNAL_ERROR',
+  AI_ERROR:         'AI_ERROR',
+};

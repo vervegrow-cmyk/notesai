@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import type { Folder, Note } from '../types';
-import * as db from '../services/db';
+import * as folderRepo from '../repositories/folderRepo';
+import * as inventoryRepo from '../repositories/inventoryRepo';
 
 interface NotesState {
   folders: Folder[];
@@ -38,7 +39,10 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   isSearching: false,
 
   loadAll: async () => {
-    const [folders, notes] = await Promise.all([db.getAllFolders(), db.getAllNotes()]);
+    const [folders, notes] = await Promise.all([
+      folderRepo.findAllFolders(),
+      inventoryRepo.findAllNotes(),
+    ]);
     set({ folders, notes });
   },
 
@@ -51,20 +55,20 @@ export const useNotesStore = create<NotesState>((set, get) => ({
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    await db.createFolder(folder);
+    await folderRepo.insertFolder(folder);
     set(s => ({ folders: [...s.folders, folder] }));
     return folder;
   },
 
   renameFolder: async (id, name) => {
-    await db.updateFolder(id, { name, updatedAt: new Date() });
+    await folderRepo.updateFolder(id, { name, updatedAt: new Date() });
     set(s => ({
       folders: s.folders.map(f => f.id === id ? { ...f, name, updatedAt: new Date() } : f),
     }));
   },
 
   deleteFolder: async (id) => {
-    await db.deleteFolder(id);
+    await folderRepo.deleteFolder(id);
     const state = get();
     const deletedIds = new Set<string>();
     const collect = (fid: string) => {
@@ -94,20 +98,20 @@ export const useNotesStore = create<NotesState>((set, get) => ({
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    await db.createNote(note);
+    await inventoryRepo.insertNote(note);
     set(s => ({ notes: [note, ...s.notes], activeNoteId: note.id }));
     return note;
   },
 
   updateNote: async (id, changes) => {
-    await db.updateNote(id, changes);
+    await inventoryRepo.updateNote(id, changes);
     set(s => ({
       notes: s.notes.map(n => n.id === id ? { ...n, ...changes, updatedAt: new Date() } : n),
     }));
   },
 
   deleteNote: async (id) => {
-    await db.deleteNote(id);
+    await inventoryRepo.deleteNote(id);
     set(s => ({
       notes: s.notes.filter(n => n.id !== id),
       activeNoteId: s.activeNoteId === id ? null : s.activeNoteId,
@@ -121,7 +125,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     const note = get().notes.find(n => n.id === id);
     if (!note) return;
     const isFavorite = !note.isFavorite;
-    await db.updateNote(id, { isFavorite });
+    await inventoryRepo.updateNote(id, { isFavorite });
     set(s => ({
       notes: s.notes.map(n => n.id === id ? { ...n, isFavorite } : n),
     }));
@@ -133,7 +137,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
       return;
     }
     set({ searchQuery: q, isSearching: true });
-    const results = await db.searchNotes(q);
+    const results = await inventoryRepo.searchNotes(q);
     set({ searchResults: results, isSearching: false });
   },
 

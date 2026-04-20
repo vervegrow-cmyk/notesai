@@ -1,3 +1,5 @@
+// ── Domain: Notes ──────────────────────────────────────────────────────────────
+
 export interface Folder {
   id: string;
   name: string;
@@ -20,3 +22,51 @@ export interface Note {
   createdAt: Date;
   updatedAt: Date;
 }
+
+// ── Domain: Inventory / Valuation ──────────────────────────────────────────────
+
+export type Phase = 'upload' | 'select' | 'chatting' | 'done';
+export type FileType = 'image' | 'video' | 'spreadsheet';
+
+export interface Product {
+  name: string;
+  category: string;
+  brand: string;
+}
+
+export interface SpreadsheetProduct {
+  name: string;
+  category: string;
+  brand: string;
+  rowText: string;
+  details: Record<string, string>;
+  thumbnail?: string;
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface PricingResult {
+  estimated_price: string;
+  resale_price: string;
+  quick_sale_price: string;
+  confidence: string;
+  reason: string;
+}
+
+// ── API Response Envelope ──────────────────────────────────────────────────────
+
+export interface ApiSuccess<T = unknown> {
+  success: true;
+  data: T;
+  message: string;
+}
+
+export interface ApiError {
+  success: false;
+  error: { code: string; message: string };
+}
+
+export type ApiResponse<T = unknown> = ApiSuccess<T> | ApiError;
