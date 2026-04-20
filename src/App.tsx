@@ -332,12 +332,15 @@ export default function App() {
       {/* Header */}
       <header className="sticky top-0 z-50 bg-[#0f172a] shadow-lg">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <button
+            onClick={() => { reset(); setAppView('valuation'); }}
+            className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+          >
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-base shadow-md">📦</div>
             <span className="text-white font-bold text-base sm:text-lg tracking-tight">
               Inventory Liquidity <span className="text-violet-400">AI</span>
             </span>
-          </div>
+          </button>
           <div className="flex items-center gap-2">
             {/* Recovery nav */}
             <button
