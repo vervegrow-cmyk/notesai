@@ -31,12 +31,36 @@ function readStoredView(): AppView {
   return (v === 'cart' || v === 'orders') ? v : 'valuation';
 }
 
+function compressThumbnailForStorage(base64: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 256;
+      const scale = Math.min(MAX / img.width, MAX / img.height, 1);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(`data:image/jpeg;base64,${base64}`); return; }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.7));
+    };
+    img.onerror = () => resolve(`data:image/jpeg;base64,${base64}`);
+    img.src = `data:image/jpeg;base64,${base64}`;
+  });
+}
+
 const _vs = (() => {
   try {
     const r = sessionStorage.getItem('valuation-session');
     if (!r) return null;
     const d = JSON.parse(r);
     if (!d || typeof d !== 'object' || !['select', 'chatting'].includes(d.phase)) return null;
+    // Load image thumbnails from individual keys to avoid large JSON
+    const count = typeof d.imageCount === 'number' ? d.imageCount : 0;
+    d.uploadedImages = Array.from({ length: count }, (_, i) =>
+      sessionStorage.getItem(`valuation-img-${i}`) ?? ''
+    ).filter(Boolean);
     return d;
   } catch { return null; }
 })();
@@ -44,7 +68,15 @@ const _vs = (() => {
 function saveSession(data: object) {
   try { sessionStorage.setItem('valuation-session', JSON.stringify(data)); } catch { /* quota */ }
 }
-function clearSession() { sessionStorage.removeItem('valuation-session'); }
+function clearSession() {
+  const keys: string[] = [];
+  for (let i = 0; i < sessionStorage.length; i++) {
+    const k = sessionStorage.key(i);
+    if (k?.startsWith('valuation-img-')) keys.push(k);
+  }
+  keys.forEach(k => sessionStorage.removeItem(k));
+  sessionStorage.removeItem('valuation-session');
+}
 
 export default function App() {
   const [appView, setAppViewState] = useState<AppView>(readStoredView);
@@ -66,7 +98,7 @@ export default function App() {
   // Single-image / video state (also used as "current" image after group select)
   const [imageBase64, setImageBase64] = useState<string>(_vs?.imageBase64 ?? '');
   const [imagePreview, setImagePreview] = useState<string>(
-    _vs?.imagePreview ?? (_vs?.imageBase64 ? `data:image/jpeg;base64,${_vs.imageBase64}` : '')
+    _vs?.imageBase64 ? `data:image/jpeg;base64,${_vs.imageBase64}` : ''
   );
 
   // Multi-image state
@@ -100,9 +132,10 @@ export default function App() {
   // ── Session persistence (survives same-tab refresh) ───────────────────────
   useEffect(() => {
     if (phase === 'upload') { clearSession(); return; }
+    // Images are stored in separate keys (valuation-img-{i}) to avoid quota issues
     saveSession({
-      phase, fileType, imageBase64, imagePreview,
-      uploadedImages: uploadedImages.map(img => `data:image/jpeg;base64,${img.base64}`),
+      phase, fileType, imageBase64,
+      imageCount: uploadedImages.length,
       productGroups,
       spreadsheetProducts: spreadsheetProducts.map(sp => ({ ...sp, thumbnail: sp.thumbnail?.startsWith('blob:') ? undefined : sp.thumbnail })),
       spreadsheetRows,
@@ -112,6 +145,18 @@ export default function App() {
       selSPIdx: selectedSP ? spreadsheetProducts.indexOf(selectedSP) : -1,
     });
   }, [phase, fileType, imageBase64, uploadedImages, productGroups, spreadsheetProducts, spreadsheetRows, product, result, messages, selectedGroup, selectedSP]);
+
+  // Save each image as a tiny 256px thumbnail in its own sessionStorage key
+  useEffect(() => {
+    if (phase === 'upload') return;
+    uploadedImages.forEach(async (img, i) => {
+      if (!img.base64) return;
+      try {
+        const tiny = await compressThumbnailForStorage(img.base64);
+        sessionStorage.setItem(`valuation-img-${i}`, tiny);
+      } catch { /* quota */ }
+    });
+  }, [uploadedImages, phase]);
 
   function revokeThumbnails(products: SpreadsheetProduct[]) {
     products.forEach(p => { if (p.thumbnail?.startsWith('blob:')) URL.revokeObjectURL(p.thumbnail); });
