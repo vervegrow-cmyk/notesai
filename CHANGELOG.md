@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.1.0] - 2026-04-21
+
+### Fixed
+- 彻底修复 `/api/identify/analyze` 404：放弃 catch-all `[...path].js` 方案，改用单段简单路由
+- 根本原因：Vercel 的 `api/[...path].js` catch-all 对多段嵌套路径（如 `/api/identify/analyze`）路由不可靠
+- 修复方式：新增 `api/identify.js`（`POST /api/identify`）和 `api/pricing.js`（`POST /api/pricing`），均完全自包含
+- 同时恢复 `api/auth/[action].js`、`api/inquiry/[action].js`、`api/logistics/select.js`（单动态段路由，Vercel 可靠支持）
+
+### Changed
+- 前端 `identifyApi.ts`：调用路径从 `/api/identify/analyze` 改为 `/api/identify`
+- 前端 `pricingApi.ts`：调用路径从 `/api/pricing/calculate` 改为 `/api/pricing`
+- 删除 `api/[...path].js` catch-all
+- `dev-server.js` 新增 `/api/pricing` 别名
+
+---
+
 ## [0.0.9] - 2026-04-21
 
 ### Fixed
