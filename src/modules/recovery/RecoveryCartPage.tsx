@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { RecoveryMethod, PickupInfo } from '../../types/recovery';
 import { useRecoveryStore } from '../../stores/recoveryStore';
+import { saveInquiry, selectLogistics } from '../../services/inquiryApi';
 
 interface Props {
   onBack: () => void;
@@ -16,11 +17,16 @@ export function RecoveryCartPage({ onBack, onOrdersView }: Props) {
   const [pickupContactPhone, setPickupContactPhone] = useState('');
   const [pickupTimeSlot, setPickupTimeSlot] = useState('');
   const [pickupNotes, setPickupNotes] = useState('');
+  const [userName, setUserName] = useState('');
+  const [contact, setContact] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set(cart.map(c => c.id)));
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   const pickupValid = batchMethod !== 'pickup' ||
     (pickupAddress.trim() && pickupContactName.trim() && pickupContactPhone.trim() && pickupTimeSlot.trim());
+  const canSubmit = userName.trim() && contact.trim() && pickupValid;
 
   function toggleItem(id: string) {
     setSelected(prev => {
@@ -35,9 +41,11 @@ export function RecoveryCartPage({ onBack, onOrdersView }: Props) {
     else setSelected(new Set(cart.map(c => c.id)));
   }
 
-  function handleBatchCreate() {
+  async function handleBatchCreate() {
     const items = cart.filter(c => selected.has(c.id));
-    if (!items.length || !pickupValid) return;
+    if (!items.length || !canSubmit || submitting) return;
+    setSubmitting(true);
+    setSubmitError('');
     let pickupInfo: PickupInfo | undefined;
     if (batchMethod === 'pickup') {
       pickupInfo = {
@@ -48,7 +56,44 @@ export function RecoveryCartPage({ onBack, onOrdersView }: Props) {
         notes: pickupNotes.trim() || undefined,
       };
     }
+    try {
+      const parsePrice = (s: string) =>
+        parseFloat(s.replace(/[^0-9.]/g, '')) || 0;
+      const estimatedTotal = items.reduce((sum, i) => sum + parsePrice(i.estimatedPrice), 0);
+      const res = await saveInquiry({
+        userName: userName.trim(),
+        contact: contact.trim(),
+        userType: 'personal',
+        estimatedTotal,
+        products: items.map(i => ({
+          title: i.productName,
+          name: i.productName,
+          category: i.productCategory,
+          brand: i.productBrand,
+          images: i.thumbnail ? [i.thumbnail] : [],
+          thumbnail: i.thumbnail,
+          condition: 'used',
+          estimatedPrice: parsePrice(i.estimatedPrice),
+          quantity: 1,
+        })),
+      });
+      if (res.success && res.data?.inquiry?.id) {
+        await selectLogistics({
+          inquiryId: res.data.inquiry.id,
+          type: batchMethod === 'pickup' ? 'pickup' : 'shipping',
+          address: batchMethod === 'pickup' ? pickupAddress.trim() : undefined,
+          contactName: batchMethod === 'pickup' ? pickupContactName.trim() || undefined : undefined,
+          contactPhone: batchMethod === 'pickup' ? pickupContactPhone.trim() || undefined : undefined,
+          timeSlot: batchMethod === 'pickup' ? pickupTimeSlot.trim() || undefined : undefined,
+          shippingAddress: batchMethod === 'shipping' ? batchAddress.trim() || undefined : undefined,
+          notes: batchMethod === 'pickup' ? pickupNotes.trim() || undefined : undefined,
+        });
+      }
+    } catch {
+      setSubmitError('提交到后台失败，订单已本地保存');
+    }
     batchCreateOrders(items, batchMethod, batchAddress || undefined, undefined, pickupInfo);
+    setSubmitting(false);
     setSubmitted(true);
     setTimeout(() => { onOrdersView(); }, 1200);
   }
@@ -141,6 +186,33 @@ export function RecoveryCartPage({ onBack, onOrdersView }: Props) {
         <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
           <p className="text-sm font-bold text-slate-800">批量下单配置 · {selectedItems.length} 件</p>
 
+          {/* Contact info */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">联系信息</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">姓名 <span className="text-red-400">*</span></label>
+                <input
+                  type="text"
+                  value={userName}
+                  onChange={e => setUserName(e.target.value)}
+                  placeholder="您的姓名"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">联系方式 <span className="text-red-400">*</span></label>
+                <input
+                  type="text"
+                  value={contact}
+                  onChange={e => setContact(e.target.value)}
+                  placeholder="手机号或微信号"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+                />
+              </div>
+            </div>
+          </div>
+
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">统一回收方式</p>
             <div className="grid grid-cols-2 gap-2">
@@ -231,12 +303,19 @@ export function RecoveryCartPage({ onBack, onOrdersView }: Props) {
             </div>
           )}
 
+          {submitError && (
+            <div className="px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-700">
+              ⚠️ {submitError}
+            </div>
+          )}
           <button
             onClick={handleBatchCreate}
-            disabled={!pickupValid}
-            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-semibold text-sm transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={!canSubmit || submitting}
+            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-semibold text-sm transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            确认创建 {selectedItems.length} 个回收订单
+            {submitting ? (
+              <><svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>提交中...</>
+            ) : `确认创建 ${selectedItems.length} 个回收订单`}
           </button>
         </div>
       )}
