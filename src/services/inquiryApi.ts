@@ -27,7 +27,17 @@ export async function saveInquiry(data: {
   contact: string;
   userType?: string;
   note?: string;
-  products: Array<{ name: string; category: string; brand: string; thumbnail?: string; estimatedPrice?: string }>;
+  products: Array<{
+    title?: string;
+    name?: string;
+    category?: string;
+    brand?: string;
+    thumbnail?: string;
+    images?: string[];
+    condition?: string;
+    estimatedPrice?: number | string;
+    quantity?: number;
+  }>;
   estimatedTotal?: number;
 }) {
   const response = await fetch(`${API_URL}/api/inquiry/create`, {

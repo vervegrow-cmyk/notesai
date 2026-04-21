@@ -1,72 +1,93 @@
-// ── User types ────────────────────────────────────────────────────────────
-
+// ── User types ─────────────────────────────────────────────────────────────
 export type UserRole = 'user' | 'seller' | 'broker' | 'recycler' | 'admin';
 export type UserType = 'personal' | 'seller' | 'broker';
 
-// ── Inquiry ───────────────────────────────────────────────────────────────
-
+// ── Status & condition types ────────────────────────────────────────────────
 export type InquiryStatus =
-  | 'draft'
-  | 'pending'
-  | 'priced'
+  | 'new'
+  | 'quoted'
   | 'accepted'
   | 'rejected'
-  | 'saved'
   | 'processing'
   | 'completed';
 
-export interface Inquiry {
-  id: string;
-  userId?: string;
-  userName: string;
-  contact: string;
-  userType: UserType;
-  status: InquiryStatus;
-  estimatedTotal: number;
+export type ProductCondition = 'new' | 'like_new' | 'used' | 'damaged';
+
+export type ShippingMethod = 'pickup' | 'warehouse_shipping' | 'fba_transfer';
+
+// ── Pricing breakdown ───────────────────────────────────────────────────────
+export interface PricingBreakdown {
+  marketReference: number;
+  conditionAdjustment: number;
+  bulkDiscount: number;
+  final: number;
   note?: string;
-  createdAt: string;
-  updatedAt?: string;
 }
 
-// ── Product ───────────────────────────────────────────────────────────────
-
+// ── Product ─────────────────────────────────────────────────────────────────
 export type RiskLevel       = 'low' | 'medium' | 'high';
 export type ConfidenceLevel = 'low' | 'medium' | 'high';
 
 export interface InquiryProduct {
   id: string;
   inquiryId: string;
-  name: string;
-  category: string;
-  brand: string;
+  // Primary fields
+  title: string;
+  images: string[];
+  condition: ProductCondition;
+  estimatedPrice: number;
+  pricingReason?: PricingBreakdown | string;
+  quantity: number;
+  // Legacy / additional
+  name?: string;
+  category?: string;
+  brand?: string;
   description?: string;
   thumbnail?: string;
   tableData?: Record<string, string>;
-
-  // Pricing fields (set after AI analysis)
-  estimatedPrice?: string;     // display string, e.g. "¥800-1200"
   priceMin?: number;
   priceMax?: number;
   confidence?: ConfidenceLevel;
   riskLevel?: RiskLevel;
   riskNote?: string;
   recycleAdvice?: string;
-
-  createdAt: string;
+  createdAt?: string;
 }
 
 export interface InquiryProductInput {
-  name: string;
-  category: string;
-  brand: string;
+  title?: string;
+  name?: string;
+  category?: string;
+  brand?: string;
   description?: string;
   thumbnail?: string;
+  images?: string[];
+  condition?: ProductCondition;
+  estimatedPrice?: number | string;
+  pricingReason?: PricingBreakdown | string;
+  quantity?: number;
   tableData?: Record<string, string>;
-  estimatedPrice?: string;
 }
 
-// ── Decision ──────────────────────────────────────────────────────────────
+// ── Inquiry ─────────────────────────────────────────────────────────────────
+export interface Inquiry {
+  id: string;
+  userId?: string;
+  customerName: string;
+  phone: string;
+  userName: string;
+  contact: string;
+  userType: UserType;
+  status: InquiryStatus;
+  estimatedTotal: number;
+  acceptedShippingMethod?: ShippingMethod;
+  note?: string;
+  createdAt: string;
+  updatedAt?: string;
+  products: InquiryProduct[];
+}
 
+// ── Decision ─────────────────────────────────────────────────────────────────
 export type DecisionAction = 'accept' | 'reject' | 'save' | 'accumulate';
 
 export interface Decision {
@@ -78,8 +99,7 @@ export interface Decision {
   updatedAt?: string;
 }
 
-// ── Logistics ─────────────────────────────────────────────────────────────
-
+// ── Logistics ─────────────────────────────────────────────────────────────────
 export type LogisticsType   = 'pickup' | 'shipping' | 'fba';
 export type LogisticsStatus = 'pending' | 'scheduled' | 'in_transit' | 'completed';
 
@@ -101,8 +121,7 @@ export interface Logistics {
   updatedAt?: string;
 }
 
-// ── Compound detail response ──────────────────────────────────────────────
-
+// ── Compound detail ───────────────────────────────────────────────────────────
 export interface InquiryDetail {
   inquiry: Inquiry;
   products: InquiryProduct[];
@@ -110,43 +129,62 @@ export interface InquiryDetail {
   logistics: Logistics | null;
 }
 
-// ── Statistics ────────────────────────────────────────────────────────────
-
+// ── Statistics ────────────────────────────────────────────────────────────────
 export interface InquiryStatistics {
   total: number;
-  draft: number;
-  pending: number;
-  priced: number;
+  new: number;
+  quoted: number;
   accepted: number;
   rejected: number;
-  saved: number;
   processing: number;
   completed: number;
   totalValue: number;
 }
 
-// ── UI helpers ────────────────────────────────────────────────────────────
+// ── UI helpers ────────────────────────────────────────────────────────────────
 
 export const INQUIRY_STATUS_LABELS: Record<InquiryStatus, string> = {
-  draft:      '草稿',
-  pending:    '待估价',
-  priced:     '已出价',
+  new:        '待估价',
+  quoted:     '已出价',
   accepted:   '已接受',
   rejected:   '已拒绝',
-  saved:      '已暂存',
   processing: '处理中',
   completed:  '已完成',
 };
 
 export const INQUIRY_STATUS_COLORS: Record<InquiryStatus, string> = {
-  draft:      'bg-slate-100 text-slate-600',
-  pending:    'bg-amber-100 text-amber-700',
-  priced:     'bg-blue-100 text-blue-700',
+  new:        'bg-amber-100 text-amber-700',
+  quoted:     'bg-blue-100 text-blue-700',
   accepted:   'bg-emerald-100 text-emerald-700',
   rejected:   'bg-red-100 text-red-700',
-  saved:      'bg-violet-100 text-violet-700',
   processing: 'bg-indigo-100 text-indigo-700',
   completed:  'bg-green-100 text-green-700',
+};
+
+export const PRODUCT_CONDITION_LABELS: Record<ProductCondition, string> = {
+  new:      '全新',
+  like_new: '九成新',
+  used:     '二手',
+  damaged:  '有损坏',
+};
+
+export const PRODUCT_CONDITION_COLORS: Record<ProductCondition, string> = {
+  new:      'bg-emerald-100 text-emerald-700',
+  like_new: 'bg-sky-100 text-sky-700',
+  used:     'bg-amber-100 text-amber-700',
+  damaged:  'bg-red-100 text-red-700',
+};
+
+export const SHIPPING_METHOD_LABELS: Record<ShippingMethod, string> = {
+  pickup:             '上门取货',
+  warehouse_shipping: '寄回仓库',
+  fba_transfer:       'FBA转运',
+};
+
+export const SHIPPING_METHOD_ICONS: Record<ShippingMethod, string> = {
+  pickup:             '🚗',
+  warehouse_shipping: '📦',
+  fba_transfer:       '🏭',
 };
 
 export const USER_TYPE_LABELS: Record<UserType, string> = {
@@ -155,6 +193,8 @@ export const USER_TYPE_LABELS: Record<UserType, string> = {
   broker:   '中介/服务商',
 };
 
+// Legacy compat
+export type LogisticsTypeAlias = LogisticsType;
 export const LOGISTICS_TYPE_LABELS: Record<LogisticsType, string> = {
   pickup:   '上门自提',
   shipping: '邮寄到仓',

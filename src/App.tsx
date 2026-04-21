@@ -8,7 +8,6 @@ import { ChatPanel } from './ui/blocks/ChatPanel';
 import { RecoveryMethodModal } from './modules/recovery/RecoveryMethodModal';
 import { RecoveryCartPage } from './modules/recovery/RecoveryCartPage';
 import { RecoveryOrderListPage } from './modules/recovery/RecoveryOrderListPage';
-import { AdminPage } from './modules/admin/AdminPage';
 import { AdminDashboard } from './modules/admin/AdminDashboard';
 import { LoginPage } from './modules/auth/LoginPage';
 import { InquirySubmitModal } from './modules/inquiry/InquirySubmitModal';
@@ -620,23 +619,31 @@ export default function App() {
 
       {/* Inquiry Submit Modal */}
       {showInquiryModal && (() => {
+        const parsePrice = (v: number | string | undefined): number => {
+          if (typeof v === 'number') return v;
+          return parseFloat((v ?? '0').replace(/[^0-9.]/g, '')) || 0;
+        };
+        const makeProduct = (
+          name: string, category: string, brand: string,
+          thumbnail: string | undefined, price: number
+        ): InquiryProduct => ({
+          id: '', inquiryId: '',
+          title: name, name, category, brand,
+          images: thumbnail ? [thumbnail] : [], thumbnail,
+          condition: 'used', quantity: 1, estimatedPrice: price,
+        });
         const pricedProducts: InquiryProduct[] = fromSpreadsheet
           ? spreadsheetProducts
-              .map((sp, i) => spResults[i] ? {
-                name: sp.name, category: sp.category, brand: sp.brand,
-                thumbnail: sp.thumbnail, estimatedPrice: spResults[i].estimated_price,
-              } : null)
+              .map((sp, i) => spResults[i]
+                ? makeProduct(sp.name, sp.category, sp.brand, sp.thumbnail, parsePrice(spResults[i].estimated_price))
+                : null)
               .filter((p): p is InquiryProduct => p !== null)
           : productGroups
-              .map((g, i) => groupResults[i] ? {
-                name: g.name, category: g.category, brand: g.brand,
-                thumbnail: g.thumbnail, estimatedPrice: groupResults[i].estimated_price,
-              } : null)
+              .map((g, i) => groupResults[i]
+                ? makeProduct(g.name, g.category, g.brand, g.thumbnail, parsePrice(groupResults[i].estimated_price))
+                : null)
               .filter((p): p is InquiryProduct => p !== null);
-        const estimatedTotal = pricedProducts.reduce((sum, p) => {
-          const n = parseFloat((p.estimatedPrice ?? '0').replace(/[^0-9.]/g, ''));
-          return sum + (isNaN(n) ? 0 : n);
-        }, 0);
+        const estimatedTotal = pricedProducts.reduce((sum, p) => sum + (p.estimatedPrice ?? 0), 0);
         return (
           <InquirySubmitModal
             products={pricedProducts}

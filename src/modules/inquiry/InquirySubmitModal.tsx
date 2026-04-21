@@ -39,11 +39,15 @@ export function InquirySubmitModal({ products, estimatedTotal, onClose, onSubmit
         userType: 'personal',
         estimatedTotal,
         products: products.map(p => ({
-          name: p.name,
-          category: p.category,
-          brand: p.brand,
-          thumbnail: p.thumbnail,
-          estimatedPrice: p.estimatedPrice,
+          title:    p.title ?? p.name ?? '未知商品',
+          name:     p.name ?? p.title ?? '未知商品',
+          category: p.category ?? '其他',
+          brand:    p.brand ?? '未知品牌',
+          thumbnail:      p.thumbnail ?? (p.images?.[0] ?? undefined),
+          images:         p.images ?? [],
+          condition:      p.condition ?? 'used',
+          estimatedPrice: p.estimatedPrice ?? 0,
+          quantity:       p.quantity ?? 1,
         })),
       });
       if (!res.success) {
@@ -101,9 +105,9 @@ export function InquirySubmitModal({ products, estimatedTotal, onClose, onSubmit
                 ) : (
                   <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-lg border border-slate-200">📦</div>
                 )}
-                {p.estimatedPrice && (
+                {p.estimatedPrice != null && p.estimatedPrice > 0 && (
                   <span className="absolute -bottom-1 -right-1 text-[9px] bg-violet-600 text-white px-1 py-0.5 rounded-full font-bold leading-none">
-                    {p.estimatedPrice.replace('¥', '')}
+                    {typeof p.estimatedPrice === 'number' ? p.estimatedPrice.toLocaleString() : String(p.estimatedPrice).replace('¥', '')}
                   </span>
                 )}
               </div>

@@ -1,21 +1,16 @@
 import { useState, useEffect, useMemo } from 'react';
-import type { Inquiry, InquiryStatus } from '../../types/inquiry';
-import { INQUIRY_STATUS_LABELS, INQUIRY_STATUS_COLORS } from '../../types/inquiry';
+import type {
+  Inquiry, InquiryProduct, InquiryStatus, InquiryStatistics,
+  ShippingMethod, ProductCondition, PricingBreakdown,
+} from '../../types/inquiry';
+import {
+  INQUIRY_STATUS_LABELS, INQUIRY_STATUS_COLORS,
+  PRODUCT_CONDITION_LABELS, PRODUCT_CONDITION_COLORS,
+  SHIPPING_METHOD_LABELS, SHIPPING_METHOD_ICONS,
+} from '../../types/inquiry';
 import { getInquiries, getStatistics, updateInquiryStatus, deleteInquiry } from '../../services/inquiryApi';
 import { useAuthStore } from '../../stores/authStore';
 import { InquiryDetailPage } from './InquiryDetailPage';
-
-interface Statistics {
-  total: number;
-  pending: number;
-  priced: number;
-  accepted: number;
-  rejected: number;
-  saved: number;
-  processing: number;
-  completed: number;
-  totalValue: number;
-}
 
 interface CustomerGroup {
   key: string;
@@ -30,21 +25,47 @@ interface CustomerGroup {
 
 type ViewMode = 'list' | 'directory';
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function normalizeProduct(p: InquiryProduct): InquiryProduct & {
+  _title: string; _thumbnail: string | null; _price: number; _qty: number; _condition: ProductCondition;
+} {
+  const _title = p.title ?? p.name ?? '未知商品';
+  const _thumbnail = p.images?.[0] ?? p.thumbnail ?? null;
+  const _price = typeof p.estimatedPrice === 'number'
+    ? p.estimatedPrice
+    : parseFloat(String(p.estimatedPrice ?? '0').replace(/[^0-9.]/g, '')) || 0;
+  const _qty = p.quantity ?? 1;
+  const _condition: ProductCondition = (p.condition as ProductCondition) ?? 'used';
+  return { ...p, _title, _thumbnail, _price, _qty, _condition };
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 export function AdminDashboard() {
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
-  const [statistics, setStatistics] = useState<Statistics>({ total: 0, pending: 0, priced: 0, accepted: 0, rejected: 0, saved: 0, processing: 0, completed: 0, totalValue: 0 });
+  const [statistics, setStatistics] = useState<InquiryStatistics>({
+    total: 0, new: 0, quoted: 0, accepted: 0, rejected: 0, processing: 0, completed: 0, totalValue: 0,
+  });
   const [filterStatus, setFilterStatus] = useState<InquiryStatus | 'all'>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<ViewMode>('directory');
-  const [selectedCustomerKey, setSelectedCustomerKey] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>(() =>
+    (localStorage.getItem('admin_viewMode') as ViewMode) || 'directory'
+  );
+  const [selectedCustomerKey, setSelectedCustomerKey] = useState<string | null>(() =>
+    localStorage.getItem('admin_selectedCustomer')
+  );
   const [expandedInquiries, setExpandedInquiries] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const { user, logout } = useAuthStore();
 
+  useEffect(() => { loadData(); }, []);
+  useEffect(() => { localStorage.setItem('admin_viewMode', viewMode); }, [viewMode]);
   useEffect(() => {
-    loadData();
-  }, []);
+    if (selectedCustomerKey) localStorage.setItem('admin_selectedCustomer', selectedCustomerKey);
+    else localStorage.removeItem('admin_selectedCustomer');
+  }, [selectedCustomerKey]);
 
   const loadData = async () => {
     setLoading(true);
@@ -64,15 +85,7 @@ export function AdminDashboard() {
       const res = await updateInquiryStatus(id, status);
       if (res.success) {
         setInquiries(prev => prev.map(q => q.id === id ? { ...q, status } : q));
-        setStatistics(prev => {
-          const old = inquiries.find(q => q.id === id);
-          if (!old) return prev;
-          return {
-            ...prev,
-            [old.status]: Math.max(0, prev[old.status as keyof Statistics] as number - 1),
-            [status]: (prev[status as keyof Statistics] as number) + 1,
-          };
-        });
+        loadData(); // refresh stats
       }
     } catch (err) {
       console.error('更新状态失败:', err);
@@ -92,21 +105,15 @@ export function AdminDashboard() {
     }
   };
 
-  // Group inquiries by customer (userName + contact)
   const customerGroups = useMemo((): CustomerGroup[] => {
     const map = new Map<string, CustomerGroup>();
     for (const inq of inquiries) {
       const key = `${inq.userName}__${inq.contact}`;
       if (!map.has(key)) {
         map.set(key, {
-          key,
-          userName: inq.userName,
-          contact: inq.contact,
-          inquiries: [],
-          totalProducts: 0,
-          totalValue: 0,
-          latestAt: inq.createdAt,
-          hasNew: false,
+          key, userName: inq.userName, contact: inq.contact,
+          inquiries: [], totalProducts: 0, totalValue: 0,
+          latestAt: inq.createdAt, hasNew: false,
         });
       }
       const g = map.get(key)!;
@@ -114,7 +121,7 @@ export function AdminDashboard() {
       g.totalProducts += inq.products?.length ?? 0;
       g.totalValue += inq.estimatedTotal ?? 0;
       if (inq.createdAt > g.latestAt) g.latestAt = inq.createdAt;
-      if (inq.status === 'pending' || inq.status === 'priced') g.hasNew = true;
+      if (inq.status === 'new' || inq.status === 'quoted') g.hasNew = true;
     }
     return Array.from(map.values()).sort((a, b) => b.latestAt.localeCompare(a.latestAt));
   }, [inquiries]);
@@ -128,9 +135,6 @@ export function AdminDashboard() {
     });
   }, [customerGroups, searchQuery, filterStatus]);
 
-  const selectedCustomer = selectedCustomerKey ? customerGroups.find(g => g.key === selectedCustomerKey) : null;
-
-  // List view filtered
   const filteredList = filterStatus === 'all' ? inquiries : inquiries.filter(q => q.status === filterStatus);
 
   const selected = selectedId ? inquiries.find(q => q.id === selectedId) : null;
@@ -155,18 +159,17 @@ export function AdminDashboard() {
       <TopBar user={user} onLogout={logout} />
 
       <div className="max-w-7xl mx-auto px-6 py-8">
-        {/* 统计卡片 */}
+        {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <StatCard title="总询价" value={statistics.total} icon="📊" color="bg-blue-50 border-blue-100" />
-          <StatCard title="待估价" value={statistics.pending} icon="📬" color="bg-amber-50 border-amber-100" highlight={statistics.pending > 0} />
-          <StatCard title="已出价" value={statistics.priced} icon="💡" color="bg-indigo-50 border-indigo-100" />
+          <StatCard title="待估价" value={statistics.new} icon="📬" color="bg-amber-50 border-amber-100" highlight={statistics.new > 0} />
+          <StatCard title="已出价" value={statistics.quoted} icon="💡" color="bg-indigo-50 border-indigo-100" />
           <StatCard title="已接受" value={statistics.accepted} icon="🤝" color="bg-emerald-50 border-emerald-100" />
           <StatCard title="总估值" value={`¥${(statistics.totalValue / 10000).toFixed(1)}万`} icon="💰" color="bg-violet-50 border-violet-100" />
         </div>
 
-        {/* 工具栏：视图切换 + 筛选 */}
+        {/* Toolbar */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 px-5 py-3 mb-5 flex items-center justify-between flex-wrap gap-3">
-          {/* 视图切换 */}
           <div className="flex items-center bg-slate-100 rounded-lg p-0.5 gap-0.5">
             <button
               onClick={() => setViewMode('directory')}
@@ -182,10 +185,9 @@ export function AdminDashboard() {
             </button>
           </div>
 
-          {/* 状态筛选 */}
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-xs font-semibold text-slate-500 mr-1">筛选:</span>
-            {(['all', 'pending', 'priced', 'accepted', 'processing'] as const).map(s => (
+            {(['all', 'new', 'quoted', 'accepted', 'processing'] as const).map(s => (
               <button
                 key={s}
                 onClick={() => setFilterStatus(s)}
@@ -194,10 +196,12 @@ export function AdminDashboard() {
                     ? 'bg-slate-900 text-white'
                     : s === 'all'
                     ? 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    : `${INQUIRY_STATUS_COLORS[s]} hover:opacity-80`
+                    : `${INQUIRY_STATUS_COLORS[s as InquiryStatus]} hover:opacity-80`
                 }`}
               >
-                {s === 'all' ? `全部 (${statistics.total})` : `${INQUIRY_STATUS_LABELS[s]} (${statistics[s as keyof Statistics] ?? 0})`}
+                {s === 'all'
+                  ? `全部 (${statistics.total})`
+                  : `${INQUIRY_STATUS_LABELS[s as InquiryStatus]} (${statistics[s as keyof InquiryStatistics] ?? 0})`}
               </button>
             ))}
           </div>
@@ -206,7 +210,9 @@ export function AdminDashboard() {
             onClick={loadData}
             className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 transition-colors"
           >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
             刷新
           </button>
         </div>
@@ -232,18 +238,14 @@ export function AdminDashboard() {
             onSearchChange={setSearchQuery}
           />
         ) : (
-          <ListView
-            inquiries={filteredList}
-            onView={setSelectedId}
-            onStatusChange={handleStatusChange}
-          />
+          <ListView inquiries={filteredList} onView={setSelectedId} onStatusChange={handleStatusChange} />
         )}
       </div>
     </div>
   );
 }
 
-// ── Directory View ──────────────────────────────────────────────────────────
+// ── Directory View ─────────────────────────────────────────────────────────────
 
 interface DirectoryViewProps {
   customers: CustomerGroup[];
@@ -276,9 +278,8 @@ function DirectoryView({
 
   return (
     <div className="flex gap-5 items-start">
-      {/* 左侧：客户目录 */}
+      {/* Left: customer list */}
       <div className="w-72 flex-shrink-0 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">
-        {/* 搜索框 */}
         <div className="p-3 border-b border-slate-100">
           <div className="relative">
             <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -295,7 +296,6 @@ function DirectoryView({
           <p className="text-[10px] text-slate-400 mt-1.5 pl-1">{customers.length} 位客户</p>
         </div>
 
-        {/* 客户列表 */}
         <div className="flex-1 overflow-y-auto max-h-[600px]">
           {customers.map(g => (
             <button
@@ -308,7 +308,6 @@ function DirectoryView({
               }`}
             >
               <div className="flex items-start gap-2.5">
-                {/* 头像 */}
                 <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 ${
                   selectedKey === g.key ? 'bg-violet-500 text-white' : 'bg-slate-100 text-slate-600'
                 }`}>
@@ -319,9 +318,7 @@ function DirectoryView({
                     <p className={`text-sm font-semibold truncate ${selectedKey === g.key ? 'text-violet-800' : 'text-slate-800'}`}>
                       {g.userName}
                     </p>
-                    {g.hasNew && (
-                      <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-amber-400" />
-                    )}
+                    {g.hasNew && <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-amber-400" />}
                   </div>
                   <p className="text-xs text-slate-400 truncate">{g.contact}</p>
                   <div className="flex items-center gap-2 mt-1">
@@ -338,7 +335,7 @@ function DirectoryView({
         </div>
       </div>
 
-      {/* 右侧：询价详情 */}
+      {/* Right: detail panel */}
       <div className="flex-1 min-w-0">
         {selectedCustomer ? (
           <CustomerInquiryPanel
@@ -352,7 +349,7 @@ function DirectoryView({
           <div className="bg-white rounded-xl border border-slate-200 h-64 flex flex-col items-center justify-center gap-2 text-center">
             <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-2xl">👈</div>
             <p className="text-sm font-semibold text-slate-600">从左侧选择客户</p>
-            <p className="text-xs text-slate-400">查看该客户的所有询价和商品目录</p>
+            <p className="text-xs text-slate-400">查看该客户的所有询价和商品明细</p>
           </div>
         )}
       </div>
@@ -360,7 +357,7 @@ function DirectoryView({
   );
 }
 
-// ── Customer Inquiry Panel ──────────────────────────────────────────────────
+// ── Customer Inquiry Panel ─────────────────────────────────────────────────────
 
 interface CustomerInquiryPanelProps {
   customer: CustomerGroup;
@@ -371,34 +368,37 @@ interface CustomerInquiryPanelProps {
 }
 
 function CustomerInquiryPanel({ customer, expandedInquiries, onToggleInquiry, onViewDetail, onStatusChange }: CustomerInquiryPanelProps) {
-  // Aggregate products across all inquiries into a catalog
+  const [activeTab, setActiveTab] = useState<'inquiries' | 'catalog'>('inquiries');
+
   const allProducts = useMemo(() => {
-    const seen = new Set<string>();
-    const result: Array<{ name: string; category: string; brand: string; thumbnail?: string; count: number; totalPrice: number; inquiryIds: string[] }> = [];
+    const seen = new Map<string, { name: string; category: string; thumbnail: string | null; count: number; totalPrice: number; inquiryIds: string[] }>();
     for (const inq of customer.inquiries) {
-      for (const p of inq.products) {
-        const key = `${p.name}__${p.category}`;
-        const existing = result.find(r => r.name === p.name && r.category === p.category);
-        if (existing) {
-          existing.count++;
-          const n = parseFloat((p.estimatedPrice ?? '0').replace(/[^0-9.]/g, ''));
-          existing.totalPrice += isNaN(n) ? 0 : n;
-          if (!existing.inquiryIds.includes(inq.id)) existing.inquiryIds.push(inq.id);
+      for (const p of (inq.products ?? [])) {
+        const np = normalizeProduct(p);
+        const key = `${np._title}__${p.category ?? ''}`;
+        if (seen.has(key)) {
+          const e = seen.get(key)!;
+          e.count += np._qty;
+          e.totalPrice += np._price * np._qty;
+          if (!e.inquiryIds.includes(inq.id)) e.inquiryIds.push(inq.id);
         } else {
-          if (!seen.has(key)) seen.add(key);
-          const n = parseFloat((p.estimatedPrice ?? '0').replace(/[^0-9.]/g, ''));
-          result.push({ name: p.name, category: p.category, brand: p.brand, thumbnail: p.thumbnail, count: 1, totalPrice: isNaN(n) ? 0 : n, inquiryIds: [inq.id] });
+          seen.set(key, {
+            name: np._title,
+            category: p.category ?? '',
+            thumbnail: np._thumbnail,
+            count: np._qty,
+            totalPrice: np._price * np._qty,
+            inquiryIds: [inq.id],
+          });
         }
       }
     }
-    return result;
+    return Array.from(seen.values());
   }, [customer]);
-
-  const [activeTab, setActiveTab] = useState<'inquiries' | 'catalog'>('inquiries');
 
   return (
     <div className="space-y-4">
-      {/* 客户摘要卡片 */}
+      {/* Customer summary */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -428,9 +428,8 @@ function CustomerInquiryPanel({ customer, expandedInquiries, onToggleInquiry, on
           </div>
         </div>
 
-        {/* 状态分布 */}
         <div className="flex items-center gap-2 mt-4">
-          {(['pending', 'priced', 'accepted', 'processing'] as const).map(s => {
+          {(['new', 'quoted', 'accepted', 'processing'] as const).map(s => {
             const count = customer.inquiries.filter(q => q.status === s).length;
             if (count === 0) return null;
             return (
@@ -445,7 +444,7 @@ function CustomerInquiryPanel({ customer, expandedInquiries, onToggleInquiry, on
         </div>
       </div>
 
-      {/* Tab 切换 */}
+      {/* Tabs */}
       <div className="flex gap-1 bg-white rounded-xl border border-slate-200 shadow-sm p-1">
         <button
           onClick={() => setActiveTab('inquiries')}
@@ -461,17 +460,20 @@ function CustomerInquiryPanel({ customer, expandedInquiries, onToggleInquiry, on
         </button>
       </div>
 
-      {/* 询价记录 */}
+      {/* Inquiry records */}
       {activeTab === 'inquiries' && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {customer.inquiries
             .slice()
             .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
             .map(inq => {
               const expanded = expandedInquiries.has(inq.id);
+              const products = (inq.products ?? []).map(normalizeProduct);
+              const shippingMethod = inq.acceptedShippingMethod as ShippingMethod | undefined;
+
               return (
                 <div key={inq.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                  {/* 询价头部（可折叠） */}
+                  {/* Header */}
                   <button
                     onClick={() => onToggleInquiry(inq.id)}
                     className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-50 transition-colors"
@@ -487,26 +489,28 @@ function CustomerInquiryPanel({ customer, expandedInquiries, onToggleInquiry, on
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${INQUIRY_STATUS_COLORS[inq.status]}`}>
                           {INQUIRY_STATUS_LABELS[inq.status]}
                         </span>
-                        <span className="text-xs text-slate-400">
-                          {inq.method === 'pickup' ? '🚗 上门自提' : '📦 邮寄'}
-                        </span>
+                        {shippingMethod && (
+                          <span className="text-xs text-slate-500">
+                            {SHIPPING_METHOD_ICONS[shippingMethod]} {SHIPPING_METHOD_LABELS[shippingMethod]}
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs text-slate-400 mt-0.5">
-                        {inq.products.length} 件商品 · 估值 <span className="font-semibold text-violet-700">¥{(inq.estimatedTotal ?? 0).toLocaleString()}</span>
+                        {products.length} 件商品 · 估值 <span className="font-semibold text-violet-700">¥{(inq.estimatedTotal ?? 0).toLocaleString()}</span>
                       </p>
                     </div>
-                    {/* 商品缩略图预览 */}
+                    {/* Thumbnail strip */}
                     <div className="flex -space-x-1.5 flex-shrink-0">
-                      {inq.products.slice(0, 4).map((p, i) => (
+                      {products.slice(0, 4).map((p, i) => (
                         <div key={i} className="w-7 h-7 rounded-lg border-2 border-white overflow-hidden bg-slate-100 flex items-center justify-center flex-shrink-0">
-                          {p.thumbnail
-                            ? <img src={p.thumbnail} alt={p.name} className="w-full h-full object-cover" />
+                          {p._thumbnail
+                            ? <img src={p._thumbnail} alt={p._title} className="w-full h-full object-cover" />
                             : <span className="text-xs">📦</span>}
                         </div>
                       ))}
-                      {inq.products.length > 4 && (
+                      {products.length > 4 && (
                         <div className="w-7 h-7 rounded-lg border-2 border-white bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600 flex-shrink-0">
-                          +{inq.products.length - 4}
+                          +{products.length - 4}
                         </div>
                       )}
                     </div>
@@ -518,44 +522,56 @@ function CustomerInquiryPanel({ customer, expandedInquiries, onToggleInquiry, on
                     </button>
                   </button>
 
-                  {/* 展开内容：商品列表 + 快捷操作 */}
+                  {/* Expanded: product cards + actions */}
                   {expanded && (
-                    <div className="border-t border-slate-100 px-4 pb-4 pt-3">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
-                        {inq.products.map((p, i) => (
-                          <div key={i} className="flex items-center gap-2.5 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                            <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100">
-                              {p.thumbnail
-                                ? <img src={p.thumbnail} alt={p.name} className="w-full h-full object-cover" />
-                                : <div className="w-full h-full flex items-center justify-center text-lg">📦</div>}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-semibold text-slate-800 truncate">{p.name}</p>
-                              <p className="text-[10px] text-slate-400 truncate">{p.category} · {p.brand}</p>
-                            </div>
-                            {p.estimatedPrice && (
-                              <p className="text-xs font-bold text-violet-700 flex-shrink-0">{p.estimatedPrice}</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
+                    <div className="border-t border-slate-100 px-4 pb-4 pt-3 space-y-3">
+                      {/* Shipping method badge */}
+                      {shippingMethod && (
+                        <ShippingMethodBadge method={shippingMethod} />
+                      )}
 
-                      {/* 快捷状态操作 */}
-                      <div className="flex items-center gap-2">
-                        {inq.status === 'pending' && (
+                      {/* Inquiry summary bar */}
+                      <InquirySummaryBar
+                        productCount={products.length}
+                        totalValue={inq.estimatedTotal ?? 0}
+                        status={inq.status}
+                      />
+
+                      {/* Product cards grid */}
+                      {products.length > 0 ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                          {products.map((p, i) => (
+                            <ProductCard key={p.id ?? i} product={p} />
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400 text-center py-4">暂无商品信息</p>
+                      )}
+
+                      {/* Quick actions */}
+                      <div className="flex items-center gap-2 pt-1">
+                        {inq.status === 'new' && (
                           <button
-                            onClick={() => onStatusChange(inq.id, 'priced')}
+                            onClick={() => onStatusChange(inq.id, 'quoted')}
                             className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors"
                           >
                             💡 标记已出价
                           </button>
                         )}
-                        {inq.status === 'priced' && (
+                        {inq.status === 'quoted' && (
                           <button
-                            onClick={() => onStatusChange(inq.id, 'processing')}
+                            onClick={() => onStatusChange(inq.id, 'accepted')}
                             className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors"
                           >
-                            🤝 标记处理中
+                            🤝 标记已接受
+                          </button>
+                        )}
+                        {inq.status === 'accepted' && (
+                          <button
+                            onClick={() => onStatusChange(inq.id, 'processing')}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors"
+                          >
+                            🚀 开始处理
                           </button>
                         )}
                         <button
@@ -573,13 +589,13 @@ function CustomerInquiryPanel({ customer, expandedInquiries, onToggleInquiry, on
         </div>
       )}
 
-      {/* 商品目录 */}
+      {/* Product catalog */}
       {activeTab === 'catalog' && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
             {customer.userName} 的商品目录 — 共 {allProducts.length} 类
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {allProducts.map((p, i) => (
               <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50 hover:border-violet-200 hover:bg-violet-50/30 transition-colors">
                 <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border border-slate-200">
@@ -589,19 +605,11 @@ function CustomerInquiryPanel({ customer, expandedInquiries, onToggleInquiry, on
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-slate-800 truncate">{p.name}</p>
-                  <p className="text-[10px] text-slate-400 truncate">{p.category} · {p.brand}</p>
+                  <p className="text-[10px] text-slate-400 truncate">{p.category}</p>
                   <div className="flex items-center gap-2 mt-0.5">
-                    {p.count > 1 && (
-                      <span className="text-[10px] text-blue-600 font-semibold">×{p.count}</span>
-                    )}
-                    {p.totalPrice > 0 && (
-                      <span className="text-[10px] font-bold text-violet-700">
-                        ¥{p.totalPrice.toLocaleString()}
-                      </span>
-                    )}
-                    <span className="text-[10px] text-slate-400">
-                      {p.inquiryIds.length}次询价
-                    </span>
+                    {p.count > 1 && <span className="text-[10px] text-blue-600 font-semibold">×{p.count}</span>}
+                    {p.totalPrice > 0 && <span className="text-[10px] font-bold text-violet-700">¥{p.totalPrice.toLocaleString()}</span>}
+                    <span className="text-[10px] text-slate-400">{p.inquiryIds.length}次询价</span>
                   </div>
                 </div>
               </div>
@@ -613,7 +621,140 @@ function CustomerInquiryPanel({ customer, expandedInquiries, onToggleInquiry, on
   );
 }
 
-// ── List View ───────────────────────────────────────────────────────────────
+// ── Product Card ──────────────────────────────────────────────────────────────
+
+type NormalizedProduct = InquiryProduct & {
+  _title: string; _thumbnail: string | null; _price: number; _qty: number; _condition: ProductCondition;
+};
+
+function ProductCard({ product }: { product: NormalizedProduct }) {
+  const [showBreakdown, setShowBreakdown] = useState(false);
+  const { _title, _thumbnail, _price, _qty, _condition, pricingReason } = product;
+
+  return (
+    <div className="rounded-xl border border-slate-200 overflow-hidden bg-white hover:shadow-md transition-shadow flex flex-col">
+      {/* Image */}
+      <div className="relative aspect-square bg-slate-100">
+        {_thumbnail
+          ? <img src={_thumbnail} alt={_title} className="w-full h-full object-cover" />
+          : <div className="w-full h-full flex items-center justify-center text-3xl">📦</div>}
+        <span className={`absolute top-2 right-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${PRODUCT_CONDITION_COLORS[_condition]}`}>
+          {PRODUCT_CONDITION_LABELS[_condition]}
+        </span>
+        {_qty > 1 && (
+          <span className="absolute bottom-2 left-2 bg-black/60 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+            ×{_qty}
+          </span>
+        )}
+      </div>
+
+      {/* Info */}
+      <div className="p-2.5 flex flex-col flex-1">
+        <p className="text-xs font-semibold text-slate-900 truncate leading-snug">{_title}</p>
+        {product.category && (
+          <p className="text-[10px] text-slate-400 truncate mt-0.5">{product.category}{product.brand ? ` · ${product.brand}` : ''}</p>
+        )}
+
+        <div className="flex items-center justify-between mt-auto pt-2">
+          <span className="text-[10px] text-slate-400">×{_qty}</span>
+          <span className={`text-sm font-bold ${_price > 0 ? 'text-violet-700' : 'text-slate-400'}`}>
+            {_price > 0 ? `¥${_price.toLocaleString()}` : '待估价'}
+          </span>
+        </div>
+
+        {pricingReason && (
+          <button
+            onClick={() => setShowBreakdown(!showBreakdown)}
+            className="mt-1.5 flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-700 font-semibold"
+          >
+            <svg className={`w-3 h-3 transition-transform ${showBreakdown ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+            {showBreakdown ? '收起依据' : '估价依据'}
+          </button>
+        )}
+
+        {showBreakdown && pricingReason && (
+          <PricingBreakdownPanel reason={pricingReason} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Pricing Breakdown Panel ───────────────────────────────────────────────────
+
+function PricingBreakdownPanel({ reason }: { reason: PricingBreakdown | string }) {
+  if (typeof reason === 'string') {
+    return (
+      <div className="mt-1.5 p-2 rounded-lg bg-slate-50 border border-slate-100">
+        <p className="text-[10px] text-slate-600 leading-relaxed">{reason}</p>
+      </div>
+    );
+  }
+
+  const rows: Array<{ label: string; value: number; highlight?: boolean }> = [
+    { label: '市场参考价', value: reason.marketReference },
+    { label: '成色调整', value: reason.conditionAdjustment },
+    { label: '批量折扣', value: -Math.abs(reason.bulkDiscount) },
+    { label: 'AI估价', value: reason.final, highlight: true },
+  ].filter(r => r.value !== 0 || r.highlight);
+
+  return (
+    <div className="mt-1.5 p-2 rounded-lg bg-slate-50 border border-slate-100 space-y-1">
+      {rows.map(row => (
+        <div key={row.label} className={`flex justify-between text-[10px] ${row.highlight ? 'font-bold border-t border-slate-200 pt-1 mt-1' : ''}`}>
+          <span className={row.highlight ? 'text-slate-700' : 'text-slate-500'}>{row.label}</span>
+          <span className={
+            row.highlight ? 'text-violet-700' :
+            row.value < 0 ? 'text-red-600' :
+            row.value > 0 && !row.highlight ? 'text-emerald-600' :
+            'text-slate-700'
+          }>
+            {row.value > 0 && !row.highlight ? '+' : ''}¥{Math.abs(row.value).toLocaleString()}
+          </span>
+        </div>
+      ))}
+      {reason.note && <p className="text-[9px] text-slate-400 italic pt-0.5">{reason.note}</p>}
+    </div>
+  );
+}
+
+// ── Inquiry Summary Bar ───────────────────────────────────────────────────────
+
+function InquirySummaryBar({ productCount, totalValue, status }: { productCount: number; totalValue: number; status: InquiryStatus }) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100">
+      <div className="flex items-center gap-1.5 text-xs text-slate-600">
+        <span className="font-semibold text-slate-800">{productCount}</span> 件商品
+      </div>
+      <div className="w-px h-3 bg-slate-300" />
+      <div className="flex items-center gap-1.5 text-xs text-slate-600">
+        总估值 <span className="font-bold text-violet-700">¥{totalValue.toLocaleString()}</span>
+      </div>
+      <div className="w-px h-3 bg-slate-300" />
+      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${INQUIRY_STATUS_COLORS[status]}`}>
+        {INQUIRY_STATUS_LABELS[status]}
+      </span>
+    </div>
+  );
+}
+
+// ── Shipping Method Badge ─────────────────────────────────────────────────────
+
+function ShippingMethodBadge({ method }: { method: ShippingMethod }) {
+  return (
+    <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+      <span className="text-xl">{SHIPPING_METHOD_ICONS[method]}</span>
+      <div>
+        <p className="text-[10px] text-emerald-600 font-semibold uppercase tracking-widest">客户已选配送方式</p>
+        <p className="text-sm font-bold text-emerald-800">{SHIPPING_METHOD_LABELS[method]}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── List View ─────────────────────────────────────────────────────────────────
 
 interface ListViewProps {
   inquiries: Inquiry[];
@@ -646,41 +787,41 @@ function ListView({ inquiries, onView, onStatusChange }: ListViewProps) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {inquiries.map(inq => (
-              <tr key={inq.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-5 py-3.5">
-                  <p className="font-semibold text-slate-900 text-sm">{inq.userName}</p>
-                </td>
-                <td className="px-5 py-3.5 text-sm text-slate-500">{inq.contact}</td>
-                <td className="px-5 py-3.5">
-                  <div className="flex items-center gap-1">
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 text-xs font-bold text-slate-700">{inq.products.length}</span>
-                    <div className="flex -space-x-1 ml-1">
-                      {inq.products.slice(0, 3).map((p, i) => (
-                        <div key={i} className="w-6 h-6 rounded-md border border-white overflow-hidden bg-slate-100">
-                          {p.thumbnail ? <img src={p.thumbnail} alt="" className="w-full h-full object-cover" /> : <span className="text-[10px] flex items-center justify-center h-full">📦</span>}
-                        </div>
-                      ))}
+            {inquiries.map(inq => {
+              const products = inq.products ?? [];
+              const firstThumb = products[0]?.images?.[0] ?? products[0]?.thumbnail ?? null;
+              return (
+                <tr key={inq.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-5 py-3.5">
+                    <p className="font-semibold text-slate-900 text-sm">{inq.userName}</p>
+                  </td>
+                  <td className="px-5 py-3.5 text-sm text-slate-500">{inq.contact}</td>
+                  <td className="px-5 py-3.5">
+                    <div className="flex items-center gap-1">
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 text-xs font-bold text-slate-700">{products.length}</span>
+                      {firstThumb && (
+                        <img src={firstThumb} alt="" className="w-6 h-6 rounded-md border border-slate-200 object-cover ml-1" />
+                      )}
                     </div>
-                  </div>
-                </td>
-                <td className="px-5 py-3.5 font-bold text-violet-700 text-sm">¥{(inq.estimatedTotal ?? 0).toLocaleString()}</td>
-                <td className="px-5 py-3.5">
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${INQUIRY_STATUS_COLORS[inq.status]}`}>
-                    {INQUIRY_STATUS_LABELS[inq.status]}
-                  </span>
-                </td>
-                <td className="px-5 py-3.5 text-xs text-slate-500">{new Date(inq.createdAt).toLocaleDateString('zh-CN')}</td>
-                <td className="px-5 py-3.5">
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => onView(inq.id)} className="text-blue-600 hover:text-blue-700 text-xs font-semibold">查看 →</button>
-                    {inq.status === 'pending' && (
-                      <button onClick={() => onStatusChange(inq.id, 'priced')} className="text-xs text-slate-500 hover:text-slate-800">已出价</button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="px-5 py-3.5 font-bold text-violet-700 text-sm">¥{(inq.estimatedTotal ?? 0).toLocaleString()}</td>
+                  <td className="px-5 py-3.5">
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${INQUIRY_STATUS_COLORS[inq.status]}`}>
+                      {INQUIRY_STATUS_LABELS[inq.status]}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3.5 text-xs text-slate-500">{new Date(inq.createdAt).toLocaleDateString('zh-CN')}</td>
+                  <td className="px-5 py-3.5">
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => onView(inq.id)} className="text-blue-600 hover:text-blue-700 text-xs font-semibold">查看 →</button>
+                      {inq.status === 'new' && (
+                        <button onClick={() => onStatusChange(inq.id, 'quoted')} className="text-xs text-slate-500 hover:text-slate-800">已出价</button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -688,7 +829,7 @@ function ListView({ inquiries, onView, onStatusChange }: ListViewProps) {
   );
 }
 
-// ── Shared Components ───────────────────────────────────────────────────────
+// ── Shared Components ──────────────────────────────────────────────────────────
 
 function TopBar({ user, onLogout }: { user: { username: string; role: string } | null; onLogout: () => void }) {
   return (

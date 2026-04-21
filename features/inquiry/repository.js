@@ -103,12 +103,10 @@ export function getStatistics(predicate) {
 
   return {
     total:      all.length,
-    draft:      byStatus('draft'),
-    pending:    byStatus('pending'),
-    priced:     byStatus('priced'),
+    new:        byStatus('new'),
+    quoted:     byStatus('quoted'),
     accepted:   byStatus('accepted'),
     rejected:   byStatus('rejected'),
-    saved:      byStatus('saved'),
     processing: byStatus('processing'),
     completed:  byStatus('completed'),
     totalValue: sum(all, 'estimatedTotal'),

@@ -6,12 +6,9 @@
 import * as repo from './repository.js';
 
 // ── Status machine ────────────────────────────────────────────────────────
-// Allowed transitions: from → [allowed next statuses]
 const TRANSITIONS = {
-  draft:      ['pending'],
-  pending:    ['priced', 'draft'],
-  priced:     ['accepted', 'rejected', 'saved'],
-  saved:      ['accepted', 'rejected', 'pending'],
+  new:        ['quoted'],
+  quoted:     ['accepted', 'rejected'],
   accepted:   ['processing'],
   rejected:   [],
   processing: ['completed'],
@@ -23,33 +20,42 @@ const VALID_STATUSES    = Object.keys(TRANSITIONS);
 
 // ── Create ─────────────────────────────────────────────────────────────────
 
-export function createInquiry({ userName, contact, userType = 'personal', note, products = [] }) {
+export function createInquiry({ userName, contact, userType = 'personal', note, products = [], estimatedTotal }) {
   const inquiry = repo.createInquiry({
     userName,
     contact,
+    // Friendly aliases
+    customerName: userName,
+    phone:        contact,
     userType: VALID_USER_TYPES.includes(userType) ? userType : 'personal',
-    status: 'pending',
-    estimatedTotal: 0,
+    status: 'new',
+    estimatedTotal: typeof estimatedTotal === 'number' ? estimatedTotal : 0,
     note: note ?? '',
   });
 
-  // Insert each product linked to this inquiry
+  const parsePrice = (v) => {
+    if (typeof v === 'number') return v;
+    return parseFloat(String(v ?? '0').replace(/[^0-9.]/g, '')) || 0;
+  };
+
+  // Insert each product with both new and legacy fields
   const savedProducts = products.map(p =>
     repo.createProduct({
       inquiryId: inquiry.id,
-      name:      p.name      ?? '未知商品',
+      // Primary fields
+      title:          p.title ?? p.name ?? '未知商品',
+      images:         p.images ?? (p.thumbnail ? [p.thumbnail] : []),
+      condition:      p.condition ?? 'used',
+      estimatedPrice: parsePrice(p.estimatedPrice),
+      pricingReason:  p.pricingReason ?? null,
+      quantity:       typeof p.quantity === 'number' ? p.quantity : 1,
+      // Legacy fields
+      name:      p.name ?? p.title ?? '未知商品',
       category:  p.category  ?? '其他',
       brand:     p.brand     ?? '未知品牌',
       description: p.description ?? '',
-      thumbnail:   p.thumbnail ?? null,
+      thumbnail:   p.thumbnail ?? (p.images?.[0] ?? null),
       tableData:   p.tableData ?? null,
-      estimatedPrice: p.estimatedPrice ?? null,
-      priceMin:    null,
-      priceMax:    null,
-      confidence:  null,
-      riskLevel:   null,
-      riskNote:    null,
-      recycleAdvice: null,
     })
   );
 
@@ -159,8 +165,8 @@ export function submitDecision(inquiryId, { action, note }) {
   const statusMap = {
     accept:     'accepted',
     reject:     'rejected',
-    save:       'saved',
-    accumulate: 'saved',   // stays saved, allows more products to be added
+    save:       'quoted',
+    accumulate: 'quoted',
   };
 
   const decision = repo.upsertDecision(inquiryId, { action, note: note ?? '' });
