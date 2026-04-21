@@ -1,32 +1,24 @@
 import { useState } from 'react';
 import type { Inquiry, InquiryStatus } from '../../types/inquiry';
 import { INQUIRY_STATUS_LABELS, INQUIRY_STATUS_COLORS } from '../../types/inquiry';
-import { useInquiryStore } from '../../stores/inquiryStore';
 import { updateInquiryStatus } from '../../services/inquiryApi';
 
 interface Props {
   inquiry: Inquiry;
   onBack: () => void;
   onStatusChange?: (id: string, status: InquiryStatus) => void;
+  onDelete?: (id: string) => void;
 }
 
-export function InquiryDetailPage({ inquiry, onBack, onStatusChange }: Props) {
-  const { updateStatus, removeInquiry } = useInquiryStore();
+export function InquiryDetailPage({ inquiry, onBack, onStatusChange, onDelete }: Props) {
   const [updating, setUpdating] = useState(false);
 
   const handleStatusUpdate = async (newStatus: InquiryStatus) => {
     setUpdating(true);
     try {
-      // 先调用API更新后端
       const res = await updateInquiryStatus(inquiry.id, newStatus);
-      if (res.success) {
-        // 通知父组件状态已更新
-        if (onStatusChange) {
-          onStatusChange(inquiry.id, newStatus);
-        } else {
-          // 备用：更新本地存储
-          updateStatus(inquiry.id, newStatus);
-        }
+      if (res.success && onStatusChange) {
+        onStatusChange(inquiry.id, newStatus);
       }
     } catch (err) {
       console.error('更新状态失败:', err);
@@ -169,9 +161,9 @@ export function InquiryDetailPage({ inquiry, onBack, onStatusChange }: Props) {
               🤝 标记成交
             </button>
           )}
-          {inquiry.status === 'dealed' && (
+          {onDelete && (
             <button
-              onClick={() => { removeInquiry(inquiry.id); onBack(); }}
+              onClick={() => onDelete(inquiry.id)}
               className="px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 text-sm font-semibold transition-all"
             >
               删除记录
