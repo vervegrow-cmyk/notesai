@@ -16,7 +16,9 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ success: false });
 
-  const { userName, contact, userType = 'personal', note = '', products = [], estimatedTotal } = req.body ?? {};
+  const { userName, contact, address = '', userType = 'personal', note = '', status: reqStatus, products = [], estimatedTotal } = req.body ?? {};
+
+  const VALID_INIT_STATUSES = ['new', 'pending_recovery', 'accepted'];
 
   if (!userName || !contact) {
     return res.status(400).json({
@@ -33,8 +35,9 @@ export default async function handler(req, res) {
     customerName: userName,
     contact,
     phone: contact,
+    address: address ?? '',
     userType,
-    status: 'new',
+    status: (reqStatus && VALID_INIT_STATUSES.includes(reqStatus)) ? reqStatus : 'new',
     estimatedTotal: typeof estimatedTotal === 'number' ? estimatedTotal : parsePrice(estimatedTotal),
     note: note ?? '',
     products: (products ?? []).map(p => ({

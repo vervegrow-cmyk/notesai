@@ -1,12 +1,13 @@
 import { cmd } from '../_lib/upstash.js';
 
 const VALID_TRANSITIONS = {
-  new: ['quoted'],
-  quoted: ['accepted', 'rejected'],
-  accepted: ['processing'],
-  rejected: [],
-  processing: ['completed'],
-  completed: [],
+  new:              ['quoted', 'pending_recovery', 'accepted'],
+  quoted:           ['pending_recovery', 'accepted', 'rejected'],
+  pending_recovery: ['accepted', 'processing', 'completed'],
+  accepted:         ['processing'],
+  rejected:         [],
+  processing:       ['completed'],
+  completed:        [],
 };
 
 function cors(res) {

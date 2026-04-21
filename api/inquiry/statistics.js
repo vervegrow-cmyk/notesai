@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     if (!ids || ids.length === 0) {
       return res.status(200).json({
         success: true,
-        data: { total: 0, new: 0, quoted: 0, accepted: 0, rejected: 0, processing: 0, completed: 0, totalValue: 0 },
+        data: { total: 0, new: 0, quoted: 0, pending_recovery: 0, accepted: 0, rejected: 0, processing: 0, completed: 0, totalValue: 0 },
       });
     }
 
@@ -28,6 +28,7 @@ export default async function handler(req, res) {
       total: all.length,
       new: count('new'),
       quoted: count('quoted'),
+      pending_recovery: count('pending_recovery'),
       accepted: count('accepted'),
       rejected: count('rejected'),
       processing: count('processing'),
