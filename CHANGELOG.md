@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.0.3] - 2026-04-21
+
+### Fixed
+- `POST /api/identify/analyze` 持续 404：移除 `framework: "vite"` 配置，改回标准路由模型
+- 标准路由模型下 Vercel 按「静态文件 → Serverless Function → Rewrite」顺序检查，API 函数可被正确匹配
+- `/((?!api/).*)` 负向前瞻在 Vite Build Output API 模式下失效，改用简单 `/(.*) → /index.html`
+
+---
+
 ## [0.0.2] - 2026-04-21
 
 ### Changed
