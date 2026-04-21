@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.0.8] - 2026-04-21
+
+### Fixed
+- 彻底解决 identify/pricing 函数 404/405：删除嵌套目录静态路由文件，改用 `api/[...path].js` catch-all
+- 嵌套静态路由（`api/identify/analyze.js`）被 Vercel 路由匹配异常，catch-all 动态路由优先级更稳定
+- `vercel.json` 改回负向前瞻 rewrite，API 路径不被拦截，由 Vercel 默认函数路由处理
+
+### Changed
+- 删除 `api/identify/analyze.js` 和 `api/pricing/calculate.js`
+- 新增 `api/[...path].js` 处理所有 AI 路由，完全自包含（零外部导入）
+
+---
+
 ## [0.0.7] - 2026-04-21
 
 ### Fixed
