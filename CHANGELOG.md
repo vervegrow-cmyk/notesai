@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.0.5] - 2026-04-21
+
+### Fixed
+- `api/identify/analyze.js` 和 `api/pricing/calculate.js` 改为完全自包含
+- 根本原因：Vercel 的 nft 文件追踪器未能将 `api/` 以外的文件（features/、skills/、agents/ 等）打包进函数 bundle，导致函数运行时找不到依赖，表现为 HTTP 404
+- 修复方式：将 kimiChat、parseJson、identify/pricing 逻辑全部内联到各函数文件，消除跨目录依赖
+
+---
+
 ## [0.0.4] - 2026-04-21
 
 ### Fixed
