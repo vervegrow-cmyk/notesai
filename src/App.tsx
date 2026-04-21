@@ -44,6 +44,8 @@ const _vs = (() => {
       ).filter(Boolean);
     }
     if (!Array.isArray(d.uploadedImages)) d.uploadedImages = [];
+    // Discard incomplete result (done=true but missing price fields)
+    if (d.result && !d.result.estimated_price) d.result = null;
     return d;
   } catch { return null; }
 })();
@@ -251,7 +253,7 @@ export default function App() {
 
   async function startChat(initMessages: ChatMessage[], changePhase = true) {
     const data = await callPricingApi(initMessages);
-    if (data.done) {
+    if (data.done && data.estimated_price) {
       setResult(data);
       setMessages([...initMessages, { role: 'assistant', content: data.reason }]);
     } else {
@@ -434,7 +436,7 @@ export default function App() {
     setLoading(true);
     try {
       const data = await callPricingApi(newMessages);
-      if (data.done) {
+      if (data.done && data.estimated_price) {
         setResult(data);
         setMessages([...newMessages, { role: 'assistant', content: data.reason }]);
         // stay on current phase — ChatPanel handles result display inline
@@ -496,7 +498,7 @@ export default function App() {
           : { role: m.role, content: m.content }
       );
       const data = await callPricingApi(apiMessages);
-      if (data.done) {
+      if (data.done && data.estimated_price) {
         setResult(data);
         setMessages([...newMessages, { role: 'assistant', content: data.reason }]);
         // stay on current phase — ChatPanel handles result display inline

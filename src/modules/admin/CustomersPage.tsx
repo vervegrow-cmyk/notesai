@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Inquiry, InquiryProduct, ShippingMethod, ProductCondition } from '../../types/inquiry';
 import {
@@ -105,63 +105,41 @@ export function CustomersPage() {
 
   return (
     <div className="flex gap-5 items-start">
-      {/* Left: customer list */}
-      <div className="w-72 flex-shrink-0 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">
-        <div className="p-3 border-b border-slate-100">
+      {/* Left: sidebar */}
+      <SidebarLayout>
+        {/* Search bar */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
           <div className="relative">
-            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
             <input
               type="text"
-              placeholder="搜索客户名称或联系方式..."
+              placeholder="搜索客户名称或联系方式"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+              className="w-full pl-10 pr-3 py-2 text-sm rounded-lg bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent placeholder:text-slate-400"
             />
           </div>
-          <p className="text-[10px] text-slate-400 mt-1.5 pl-1">{filteredCustomers.length} 位客户</p>
+          <p className="text-[11px] text-slate-400 mt-2 pl-0.5">{filteredCustomers.length} 位客户</p>
         </div>
 
-        <div className="flex-1 overflow-y-auto max-h-[600px]">
-          {filteredCustomers.map(g => (
-            <button
-              key={g.key}
-              onClick={() => selectCustomer(g.key)}
-              className={`w-full text-left px-3 py-3 border-b border-slate-50 transition-all ${
-                selectedKey === g.key
-                  ? 'bg-violet-50 border-l-2 border-l-violet-500'
-                  : 'hover:bg-slate-50 border-l-2 border-l-transparent'
-              }`}
-            >
-              <div className="flex items-start gap-2.5">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 ${
-                  selectedKey === g.key ? 'bg-violet-500 text-white' : 'bg-slate-100 text-slate-600'
-                }`}>
-                  {g.userName.charAt(0).toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <p className={`text-sm font-semibold truncate ${selectedKey === g.key ? 'text-violet-800' : 'text-slate-800'}`}>
-                      {g.userName}
-                    </p>
-                    {g.hasNew && <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-amber-400" />}
-                  </div>
-                  <p className="text-xs text-slate-400 truncate">{g.contact}</p>
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <span className="text-[10px] text-slate-500">{g.inquiries.length}次询价</span>
-                    <span className="text-slate-300">|</span>
-                    <span className="text-[10px] font-semibold text-violet-600">¥{g.totalValue.toLocaleString()}</span>
-                    {g.pendingRecoveryCount > 0 && (
-                      <span className="ml-auto text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full font-semibold">{g.pendingRecoveryCount}待回收</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
+        {/* Customer cards */}
+        <CustomerList>
+          {filteredCustomers.length === 0 && searchQuery ? (
+            <div className="text-center py-8 text-slate-400 text-sm">未找到匹配客户</div>
+          ) : (
+            filteredCustomers.map(g => (
+              <CustomerCard
+                key={g.key}
+                customer={g}
+                isSelected={selectedKey === g.key}
+                onClick={() => selectCustomer(g.key)}
+              />
+            ))
+          )}
+        </CustomerList>
+      </SidebarLayout>
 
       {/* Right: customer detail */}
       <div className="flex-1 min-w-0">
@@ -177,7 +155,7 @@ export function CustomersPage() {
             onViewDetail={id => navigate(`/admin/inquiries/${id}`)}
           />
         ) : (
-          <div className="bg-white rounded-xl border border-slate-200 h-64 flex flex-col items-center justify-center gap-2 text-center">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm h-64 flex flex-col items-center justify-center gap-2 text-center">
             <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-2xl">👈</div>
             <p className="text-sm font-semibold text-slate-600">从左侧选择客户</p>
             <p className="text-xs text-slate-400">查看该客户的所有询价和商品明细</p>
@@ -185,6 +163,77 @@ export function CustomersPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// ── Sidebar layout components ─────────────────────────────────────────────────
+
+function SidebarLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="w-80 flex-shrink-0 flex flex-col gap-3">
+      {children}
+    </div>
+  );
+}
+
+function CustomerList({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2 overflow-y-auto max-h-[calc(100vh-240px)]">
+      {children}
+    </div>
+  );
+}
+
+function CustomerCard({ customer: g, isSelected, onClick }: {
+  customer: CustomerGroup;
+  isSelected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full text-left rounded-xl border-l-4 transition-all shadow-sm hover:shadow-md ${
+        isSelected
+          ? 'bg-violet-50 border border-violet-200 border-l-violet-500 shadow-md'
+          : 'bg-white border border-slate-200 border-l-transparent hover:border-slate-300'
+      }`}
+    >
+      <div className="p-4 flex items-start gap-3">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-base font-bold flex-shrink-0 transition-colors ${
+          isSelected ? 'bg-violet-500 text-white' : 'bg-slate-100 text-slate-600'
+        }`}>
+          {g.userName.charAt(0).toUpperCase()}
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className={`text-base font-semibold truncate leading-tight ${
+              isSelected ? 'text-violet-900' : 'text-slate-800'
+            }`}>
+              {g.userName}
+            </p>
+            {g.hasNew && (
+              <span className="flex-shrink-0 w-2 h-2 rounded-full bg-amber-400" />
+            )}
+          </div>
+
+          <p className="text-sm text-slate-500 truncate mt-0.5">{g.contact}</p>
+
+          <div className="flex items-center gap-1.5 mt-2">
+            <span className="text-xs text-slate-400">{g.inquiries.length}次询价</span>
+            <span className="text-slate-300 text-xs">|</span>
+            <span className="text-xs font-semibold text-violet-600">
+              ¥{g.totalValue.toLocaleString()}
+            </span>
+            {g.pendingRecoveryCount > 0 && (
+              <span className="ml-auto text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full font-semibold">
+                {g.pendingRecoveryCount}待回收
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </button>
   );
 }
 
