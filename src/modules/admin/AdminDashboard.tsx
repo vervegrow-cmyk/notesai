@@ -50,6 +50,7 @@ export function AdminDashboard() {
   const [filterStatus, setFilterStatus] = useState<InquiryStatus | 'all'>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>(() =>
     (localStorage.getItem('admin_viewMode') as ViewMode) || 'directory'
   );
@@ -69,12 +70,18 @@ export function AdminDashboard() {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const [inquiryRes, statsRes] = await Promise.all([getInquiries(), getStatistics()]);
-      if (inquiryRes.success) setInquiries(inquiryRes.data.inquiries || []);
+      if (inquiryRes.success) {
+        setInquiries(inquiryRes.data.inquiries || []);
+      } else {
+        setLoadError(inquiryRes.error?.message || '加载询价列表失败');
+      }
       if (statsRes.success) setStatistics(statsRes.data);
     } catch (err) {
       console.error('加载数据失败:', err);
+      setLoadError('无法连接到后端服务，请确认数据库已配置（Upstash Redis）或本地开发服务器已启动');
     } finally {
       setLoading(false);
     }
@@ -159,6 +166,18 @@ export function AdminDashboard() {
       <TopBar user={user} onLogout={logout} />
 
       <div className="max-w-7xl mx-auto px-6 py-8">
+        {loadError && (
+          <div className="mb-6 px-5 py-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3">
+            <span className="text-red-500 text-lg flex-shrink-0">⚠️</span>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-red-700">后端连接失败</p>
+              <p className="text-xs text-red-600 mt-0.5">{loadError}</p>
+            </div>
+            <button onClick={loadData} className="text-xs text-red-600 hover:text-red-800 font-semibold px-3 py-1.5 rounded-lg hover:bg-red-100 transition-colors flex-shrink-0">
+              重试
+            </button>
+          </div>
+        )}
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <StatCard title="总询价" value={statistics.total} icon="📊" color="bg-blue-50 border-blue-100" />
