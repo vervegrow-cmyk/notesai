@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate, useLocation, Routes, Route, Navigate, NavLink } from 'react-router-dom';
 import type { Phase, FileType, Product, SpreadsheetProduct, ChatMessage, ChatAttachment, PricingResult, UploadedImage, ProductGroup } from './types';
 import { extractVideoFrame, parseSpreadsheet, extractExcelImages, extractProducts, compressImageBase64 } from './lib/media';
 import { callPricingApi } from './services/pricingApi';
@@ -8,14 +9,14 @@ import { ChatPanel } from './ui/blocks/ChatPanel';
 import { RecoveryMethodModal } from './modules/recovery/RecoveryMethodModal';
 import { RecoveryCartPage } from './modules/recovery/RecoveryCartPage';
 import { RecoveryOrderListPage } from './modules/recovery/RecoveryOrderListPage';
-import { AdminDashboard } from './modules/admin/AdminDashboard';
-import { LoginPage } from './modules/auth/LoginPage';
+import { AdminLayout } from './modules/admin/AdminLayout';
+import { CustomersPage } from './modules/admin/CustomersPage';
+import { InquiryListPage } from './modules/admin/InquiryListPage';
+import { InquiryDetailRoute } from './modules/admin/InquiryDetailPage';
 import { InquirySubmitModal } from './modules/inquiry/InquirySubmitModal';
 import { useRecoveryStore } from './stores/recoveryStore';
 import { useAuthStore } from './stores/authStore';
 import type { InquiryProduct } from './types/inquiry';
-
-type AppView = 'valuation' | 'cart' | 'orders' | 'admin';
 
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -31,10 +32,6 @@ function isSpreadsheetFile(file: File): boolean {
   return /\.(xlsx?|csv)$/i.test(file.name) || file.type.includes('spreadsheet') || file.type === 'text/csv';
 }
 
-function readStoredView(): AppView {
-  const v = localStorage.getItem('appView');
-  return (v === 'cart' || v === 'orders' || v === 'admin') ? v : 'valuation';
-}
 
 
 const _vs = (() => {
@@ -68,21 +65,19 @@ function clearSession() {
 }
 
 export default function App() {
-  const { isLoggedIn } = useAuthStore();
+  useAuthStore(); // keep subscription alive
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
 
-  const [appView, setAppViewState] = useState<AppView>(readStoredView);
+  const isAdmin = pathname.startsWith('/admin');
+  const isCart = pathname === '/cart';
+  const isOrders = pathname === '/orders';
+  const isValuation = !isAdmin && !isCart && !isOrders;
+
   const [showMethodModal, setShowMethodModal] = useState(false);
   const [showInquiryModal, setShowInquiryModal] = useState(false);
   const cartCount = useRecoveryStore(s => s.cart.length);
 
-  function setAppView(view: AppView) {
-    setAppViewState(view);
-    localStorage.setItem('appView', view);
-  }
-
-  useEffect(() => {
-    localStorage.setItem('appView', appView);
-  }, [appView]);
 
   const [phase, setPhase] = useState<Phase>(_vs?.phase ?? 'upload');
   const [fileType, setFileType] = useState<FileType>(_vs?.fileType ?? 'image');
@@ -181,7 +176,6 @@ export default function App() {
     setMessages([]); setUserInput('');
     setResult(null); setGroupResults({}); setSpResults({}); setError('');
     setUploadKey(k => k + 1);
-    localStorage.setItem('appView', 'valuation');
     clearSession();
   }
 
@@ -542,7 +536,7 @@ export default function App() {
       <header className="sticky top-0 z-50 bg-[#0f172a] shadow-lg">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between">
           <button
-            onClick={() => { reset(); setAppView('valuation'); }}
+            onClick={() => { reset(); navigate('/'); }}
             className="flex items-center gap-3 hover:opacity-80 transition-opacity"
           >
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-base shadow-md">📦</div>
@@ -552,7 +546,7 @@ export default function App() {
           </button>
           <div className="flex items-center gap-2">
             {/* Submit inquiry — visible when there are priced products */}
-            {appView === 'valuation' && (phase === 'select' || phase === 'chatting') &&
+            {isValuation && (phase === 'select' || phase === 'chatting') &&
               (Object.keys(groupResults).length > 0 || Object.keys(spResults).length > 0) && (
               <button
                 onClick={() => setShowInquiryModal(true)}
@@ -562,7 +556,7 @@ export default function App() {
               </button>
             )}
             {/* Add product shortcut — visible during select/chatting */}
-            {appView === 'valuation' && (phase === 'select' || phase === 'chatting') && (
+            {isValuation && (phase === 'select' || phase === 'chatting') && (
               <button
                 onClick={() => addProductInputRef.current?.click()}
                 disabled={addingProduct || loading}
@@ -574,33 +568,24 @@ export default function App() {
                 }
               </button>
             )}
-            {/* Recovery nav */}
-            <button
-              onClick={() => setAppView('admin')}
-              className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg transition-all ${appView === 'admin' ? 'bg-white/20 text-white' : 'bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white'}`}
-            >
+            {/* Nav links */}
+            <NavLink to="/admin" className={({ isActive }) => `flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg transition-all ${isActive ? 'bg-white/20 text-white' : 'bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white'}`}>
               🏢 后台
-            </button>
-            <button
-              onClick={() => setAppView('orders')}
-              className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg transition-all ${appView === 'orders' ? 'bg-white/20 text-white' : 'bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white'}`}
-            >
+            </NavLink>
+            <NavLink to="/orders" className={({ isActive }) => `flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg transition-all ${isActive ? 'bg-white/20 text-white' : 'bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white'}`}>
               📋 订单
-            </button>
-            <button
-              onClick={() => setAppView('cart')}
-              className={`relative flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg transition-all ${appView === 'cart' ? 'bg-white/20 text-white' : 'bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white'}`}
-            >
+            </NavLink>
+            <NavLink to="/cart" className={({ isActive }) => `relative flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg transition-all ${isActive ? 'bg-white/20 text-white' : 'bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white'}`}>
               🛒 待回收
               {cartCount > 0 && (
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full text-white text-[9px] font-bold flex items-center justify-center">
                   {cartCount > 9 ? '9+' : cartCount}
                 </span>
               )}
-            </button>
-            {appView !== 'valuation' ? (
+            </NavLink>
+            {!isValuation ? (
               <button
-                onClick={() => setAppView('valuation')}
+                onClick={() => navigate('/')}
                 className="flex items-center gap-1.5 text-xs sm:text-sm px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-all"
               >
                 ← 估价
@@ -649,7 +634,7 @@ export default function App() {
             products={pricedProducts}
             estimatedTotal={Math.round(estimatedTotal)}
             onClose={() => setShowInquiryModal(false)}
-            onSubmitted={() => { setShowInquiryModal(false); setAppView('admin'); }}
+            onSubmitted={() => { setShowInquiryModal(false); navigate('/admin/customers'); }}
           />
         );
       })()}
@@ -662,34 +647,30 @@ export default function App() {
           thumbnail={selectedSP?.thumbnail || imagePreview || undefined}
           onClose={() => setShowMethodModal(false)}
           onAddedToCart={() => { setShowMethodModal(false); }}
-          onOrderCreated={() => { setShowMethodModal(false); setAppView('orders'); }}
+          onOrderCreated={() => { setShowMethodModal(false); navigate('/orders'); }}
         />
       )}
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10 flex-1 w-full">
-
-        {/* ── App view: cart ── */}
-        {appView === 'cart' && (
-          <RecoveryCartPage
-            onBack={() => setAppView('valuation')}
-            onOrdersView={() => setAppView('orders')}
-          />
-        )}
-
-        {/* ── App view: orders ── */}
-        {appView === 'orders' && (
-          <RecoveryOrderListPage onBack={() => setAppView('valuation')} />
-        )}
-
-        {/* ── App view: admin ── */}
-        {appView === 'admin' && (
-          isLoggedIn
-            ? <AdminDashboard />
-            : <LoginPage onLoginSuccess={() => {}} />
-        )}
-
-        {/* ── App view: valuation ── */}
-        {appView === 'valuation' && <>
+      <Routes>
+        <Route path="/cart" element={
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10 flex-1 w-full">
+            <RecoveryCartPage onBack={() => navigate('/')} onOrdersView={() => navigate('/orders')} />
+          </main>
+        } />
+        <Route path="/orders" element={
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10 flex-1 w-full">
+            <RecoveryOrderListPage onBack={() => navigate('/')} />
+          </main>
+        } />
+        <Route path="/admin" element={<AdminLayout />}>
+          <Route index element={<Navigate to="customers" replace />} />
+          <Route path="customers" element={<CustomersPage />} />
+          <Route path="inquiries" element={<InquiryListPage />} />
+          <Route path="inquiries/:id" element={<InquiryDetailRoute />} />
+        </Route>
+        <Route path="/" element={
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10 flex-1 w-full">
+          <>
 
         {/* ── Phase: upload ── */}
         {phase === 'upload' && (
@@ -955,12 +936,14 @@ export default function App() {
           </div>
         )}
 
-        </>}
+                  </>
+          </main>
+        } />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
 
-      </main>
-
-      {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white">
+      {/* Footer — hidden on admin pages */}
+      {!isAdmin && <footer className="border-t border-slate-200 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-400">
           <div className="flex items-center gap-3">
             <div className="w-5 h-5 rounded bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-[10px]">📦</div>
@@ -981,7 +964,7 @@ export default function App() {
             <span>© 2025</span>
           </div>
         </div>
-      </footer>
+      </footer>}
     </div>
   );
 }

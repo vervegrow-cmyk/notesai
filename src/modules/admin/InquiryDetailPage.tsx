@@ -1,14 +1,41 @@
 import { useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import type {
   Inquiry, InquiryProduct, InquiryStatus, ShippingMethod,
   ProductCondition, PricingBreakdown,
 } from '../../types/inquiry';
+import { useAdminData } from './AdminLayout';
 import {
   INQUIRY_STATUS_LABELS, INQUIRY_STATUS_COLORS,
   PRODUCT_CONDITION_LABELS, PRODUCT_CONDITION_COLORS,
   SHIPPING_METHOD_LABELS, SHIPPING_METHOD_ICONS,
 } from '../../types/inquiry';
 import { updateInquiryStatus } from '../../services/inquiryApi';
+
+// ── URL-param wrapper (used by router) ────────────────────────────────────────
+export function InquiryDetailRoute() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { inquiries, loading, handleStatusChange, handleDelete } = useAdminData();
+
+  if (loading) return <div className="text-center py-16 text-slate-400">加载中...</div>;
+  const inquiry = inquiries.find(q => q.id === id);
+  if (!inquiry) return (
+    <div className="text-center py-16">
+      <p className="text-lg font-bold text-slate-700">询价不存在</p>
+      <button onClick={() => navigate(-1)} className="mt-4 text-sm text-blue-600 hover:underline">← 返回</button>
+    </div>
+  );
+
+  return (
+    <InquiryDetailPage
+      inquiry={inquiry}
+      onBack={() => navigate(-1)}
+      onStatusChange={handleStatusChange}
+      onDelete={handleDelete}
+    />
+  );
+}
 
 interface Props {
   inquiry: Inquiry;
