@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.0.6] - 2026-04-21
+
+### Changed
+- 更新本地开发数据库种子数据（inquiries、products）
+
+---
+
 ## [0.0.5] - 2026-04-21
 
 ### Fixed
