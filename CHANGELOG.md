@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.1.4] - 2026-04-21
+
+### Fixed
+- **彻底解决 Vercel 404/405**：放弃所有自定义路由配置（rewrites/routes），改用 Vercel 原生的 `404.html` 机制
+- 根本原因：无论 `rewrites` 还是 `routes + handle:filesystem`，在 Vite 项目中 Vercel 都会在函数路由之前处理这些规则，把 POST `/api/*` 重写到 `index.html` 静态文件 → 405
+- 修复方式：`vercel.json` 只保留 `buildCommand` 和 `outputDirectory`，零自定义路由。Vercel 原生函数路由处理所有 `/api/*`；未匹配路径由 `dist/404.html`（即 SPA）兜底
+- `vite.config.ts` 新增 `spa-404-fallback` 插件，构建后自动复制 `dist/index.html` → `dist/404.html`
+
+### Changed
+- `vercel.json` 简化为仅 2 行有效配置，无任何路由/重写规则
+- `vite.config.ts` 加入构建后钩子
+
+---
+
 ## [0.1.3] - 2026-04-21
 
 ### Fixed
