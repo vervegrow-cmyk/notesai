@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "id": "mo8cd2ekpt2a2",
+    "type": "shipping",
+    "inquiryId": "mo8cd2ea8bzfk",
+    "status": "pending",
+    "createdAt": "2026-04-21T08:08:00.620Z"
+  }
+]

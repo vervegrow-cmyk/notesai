@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.0.2] - 2026-04-21
+
+### Changed
+- 更新本地开发数据库种子数据（products、inquiries、logistics、decisions）
+- 版本号规范：每次推送自动 bump patch 版本
+
+---
+
 ## [0.0.1] - 2026-04-21
 
 ### Added
