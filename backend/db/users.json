@@ -1,0 +1,18 @@
+[
+  {
+    "id": "admin-001",
+    "username": "admin",
+    "passwordHash": "$2b$10$placeholder_change_on_first_login",
+    "role": "admin",
+    "displayName": "管理员",
+    "createdAt": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "recycler-001",
+    "username": "recycler",
+    "passwordHash": "$2b$10$placeholder_change_on_first_login",
+    "role": "recycler",
+    "displayName": "回收商",
+    "createdAt": "2026-01-01T00:00:00.000Z"
+  }
+]
