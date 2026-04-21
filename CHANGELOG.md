@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.0.4] - 2026-04-21
+
+### Fixed
+- `POST /api/identify/analyze` 仍 405：改用 `routes` 配置，显式将 `/api/(.*)` 路由到 Serverless Function
+- `rewrites` 对 POST 请求命中 index.html 而非函数（Vercel 的 rewrites 在函数检查之前执行）
+- 前端版本号从硬编码 `v1.2.0` 改为从 `package.json` 自动注入，推送后版本号即时同步
+
+### Changed
+- `vercel.json` 改用 `routes` 配置：filesystem → /api/(.*) 显式路由 → SPA 兜底
+- `vite.config.ts` 通过 `define.__APP_VERSION__` 注入版本号
+- 新增 `src/vite-env.d.ts` 声明 `__APP_VERSION__` 全局常量类型
+
+---
+
 ## [0.0.3] - 2026-04-21
 
 ### Fixed

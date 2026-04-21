@@ -901,7 +901,7 @@ export default function App() {
             <div className="w-5 h-5 rounded bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-[10px]">📦</div>
             <span className="font-medium text-slate-500">Inventory Liquidity AI</span>
             <span className="text-slate-300">·</span>
-            <span>v1.2.0</span>
+            <span>v{__APP_VERSION__}</span>
           </div>
           <div className="flex items-center gap-4">
             <span>Developer: Dreams-as-Steed</span>
