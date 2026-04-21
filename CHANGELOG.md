@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.1.1] - 2026-04-21
+
+### Fixed
+- `vercel.json` 改用最简 `/(.*) → /index.html` rewrite，彻底去掉负向前瞻复杂正则
+- 在 `api/identify.js` 加入 `console.log` 调试日志，便于 Vercel Function Logs 确认函数是否被调用
+
+### Changed
+- `vercel.json` 移除 `devCommand`，仅保留 `buildCommand`、`outputDirectory`、`rewrites`
+
+---
+
 ## [0.1.0] - 2026-04-21
 
 ### Fixed

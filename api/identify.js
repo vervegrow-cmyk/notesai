@@ -51,6 +51,7 @@ async function kimiChat({ model = 'moonshot-v1-8k', messages, retries = 2 }) {
 }
 
 export default async function handler(req, res) {
+  console.log('API HIT: /api/identify', req.method);
   cors(res);
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ success: false });
