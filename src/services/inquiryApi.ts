@@ -1,0 +1,73 @@
+import type { Inquiry } from '../types/inquiry';
+
+const API_URL = 'http://localhost:3001';
+
+export async function getInquiries(status?: string) {
+  const response = await fetch(`${API_URL}/api/inquiry/list`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status })
+  });
+
+  return response.json();
+}
+
+export async function getInquiry(id: string) {
+  const response = await fetch(`${API_URL}/api/inquiry/get`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id })
+  });
+
+  return response.json();
+}
+
+export async function saveInquiry(inquiry: Inquiry) {
+  const response = await fetch(`${API_URL}/api/inquiry/save`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(inquiry)
+  });
+
+  return response.json();
+}
+
+export async function updateInquiryStatus(id: string, status: string) {
+  const response = await fetch(`${API_URL}/api/inquiry/update-status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, status })
+  });
+
+  return response.json();
+}
+
+export async function updateInquiry(id: string, changes: Partial<Inquiry>) {
+  const response = await fetch(`${API_URL}/api/inquiry/update`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, ...changes })
+  });
+
+  return response.json();
+}
+
+export async function deleteInquiry(id: string) {
+  const response = await fetch(`${API_URL}/api/inquiry/delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id })
+  });
+
+  return response.json();
+}
+
+export async function getStatistics() {
+  const response = await fetch(`${API_URL}/api/inquiry/statistics`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  });
+
+  return response.json();
+}

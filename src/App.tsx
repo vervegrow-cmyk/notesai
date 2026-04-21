@@ -9,8 +9,11 @@ import { RecoveryMethodModal } from './modules/recovery/RecoveryMethodModal';
 import { RecoveryCartPage } from './modules/recovery/RecoveryCartPage';
 import { RecoveryOrderListPage } from './modules/recovery/RecoveryOrderListPage';
 import { AdminPage } from './modules/admin/AdminPage';
+import { AdminDashboard } from './modules/admin/AdminDashboard';
+import { LoginPage } from './modules/auth/LoginPage';
 import { InquirySubmitModal } from './modules/inquiry/InquirySubmitModal';
 import { useRecoveryStore } from './stores/recoveryStore';
+import { useAuthStore } from './stores/authStore';
 import type { InquiryProduct } from './types/inquiry';
 
 type AppView = 'valuation' | 'cart' | 'orders' | 'admin';
@@ -66,6 +69,8 @@ function clearSession() {
 }
 
 export default function App() {
+  const { isLoggedIn } = useAuthStore();
+
   const [appView, setAppViewState] = useState<AppView>(readStoredView);
   const [showMethodModal, setShowMethodModal] = useState(false);
   const [showInquiryModal, setShowInquiryModal] = useState(false);
@@ -671,7 +676,9 @@ export default function App() {
 
         {/* ── App view: admin ── */}
         {appView === 'admin' && (
-          <AdminPage onBack={() => setAppView('valuation')} />
+          isLoggedIn
+            ? <AdminDashboard />
+            : <LoginPage onLoginSuccess={() => {}} />
         )}
 
         {/* ── App view: valuation ── */}

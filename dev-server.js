@@ -5,6 +5,8 @@ import { identifyController } from './features/identify/controller.js';
 import { generateController } from './features/generate/controller.js';
 import { groupController } from './features/identify/groupController.js';
 import { recoveryCreateController, recoveryBatchCreateController, recoveryListController, recoveryStatusController } from './features/recovery/controller.js';
+import { authLoginController, authRegisterController, authLogoutController, authVerifyController } from './features/auth/controller.js';
+import { inquiryListController, inquiryGetController, inquirySaveController, inquiryUpdateStatusController, inquiryUpdateController, inquiryDeleteController, inquiryStatisticsController } from './features/inquiry/controller.js';
 import { logRequest, logError } from './backend/middlewares/logger.js';
 
 const PORT = 3001;
@@ -44,6 +46,17 @@ const ROUTES = {
   '/api/recovery/batch-create':  recoveryBatchCreateController,
   '/api/recovery/list':          recoveryListController,
   '/api/recovery/status':        recoveryStatusController,
+  '/api/auth/login':             authLoginController,
+  '/api/auth/register':          authRegisterController,
+  '/api/auth/logout':            authLogoutController,
+  '/api/auth/verify':            authVerifyController,
+  '/api/inquiry/list':           inquiryListController,
+  '/api/inquiry/get':            inquiryGetController,
+  '/api/inquiry/save':           inquirySaveController,
+  '/api/inquiry/update-status':  inquiryUpdateStatusController,
+  '/api/inquiry/update':         inquiryUpdateController,
+  '/api/inquiry/delete':         inquiryDeleteController,
+  '/api/inquiry/statistics':     inquiryStatisticsController,
 };
 
 // Legacy aliases — kept so old frontend calls still work during migration
@@ -76,5 +89,7 @@ http.createServer(async (req, res) => {
   }
 }).listen(PORT, () => {
   console.log(`API dev server running at http://localhost:${PORT}`);
-  console.log('Routes: /api/pricing/calculate | /api/identify/analyze | /api/identify/group | /api/generate/content');
+  console.log('Auth Routes: /api/auth/login | /api/auth/register | /api/auth/logout | /api/auth/verify');
+  console.log('Inquiry Routes: /api/inquiry/list | /api/inquiry/get | /api/inquiry/save | /api/inquiry/update-status | /api/inquiry/statistics');
+  console.log('Other Routes: /api/pricing/calculate | /api/identify/analyze | /api/identify/group | /api/generate/content');
 });

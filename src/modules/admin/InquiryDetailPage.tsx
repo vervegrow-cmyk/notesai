@@ -1,14 +1,39 @@
-import type { Inquiry } from '../../types/inquiry';
+import { useState } from 'react';
+import type { Inquiry, InquiryStatus } from '../../types/inquiry';
 import { INQUIRY_STATUS_LABELS, INQUIRY_STATUS_COLORS } from '../../types/inquiry';
 import { useInquiryStore } from '../../stores/inquiryStore';
+import { updateInquiryStatus } from '../../services/inquiryApi';
 
 interface Props {
   inquiry: Inquiry;
   onBack: () => void;
+  onStatusChange?: (id: string, status: InquiryStatus) => void;
 }
 
-export function InquiryDetailPage({ inquiry, onBack }: Props) {
+export function InquiryDetailPage({ inquiry, onBack, onStatusChange }: Props) {
   const { updateStatus, removeInquiry } = useInquiryStore();
+  const [updating, setUpdating] = useState(false);
+
+  const handleStatusUpdate = async (newStatus: InquiryStatus) => {
+    setUpdating(true);
+    try {
+      // 先调用API更新后端
+      const res = await updateInquiryStatus(inquiry.id, newStatus);
+      if (res.success) {
+        // 通知父组件状态已更新
+        if (onStatusChange) {
+          onStatusChange(inquiry.id, newStatus);
+        } else {
+          // 备用：更新本地存储
+          updateStatus(inquiry.id, newStatus);
+        }
+      }
+    } catch (err) {
+      console.error('更新状态失败:', err);
+    } finally {
+      setUpdating(false);
+    }
+  }
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
@@ -128,16 +153,18 @@ export function InquiryDetailPage({ inquiry, onBack }: Props) {
         <div className="flex flex-wrap gap-2">
           {inquiry.status === 'new' && (
             <button
-              onClick={() => updateStatus(inquiry.id, 'contacted')}
-              className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-all shadow-sm"
+              onClick={() => handleStatusUpdate('contacted')}
+              disabled={updating}
+              className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-all shadow-sm disabled:opacity-50"
             >
               ✓ 标记已联系
             </button>
           )}
           {inquiry.status !== 'dealed' && (
             <button
-              onClick={() => updateStatus(inquiry.id, 'dealed')}
-              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-all shadow-sm"
+              onClick={() => handleStatusUpdate('dealed')}
+              disabled={updating}
+              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-all shadow-sm disabled:opacity-50"
             >
               🤝 标记成交
             </button>
