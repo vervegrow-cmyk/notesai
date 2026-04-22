@@ -15,6 +15,21 @@ export function parseJson(text: string): Record<string, unknown> | null {
   return null;
 }
 
+/**
+ * Parse a price string (possibly a range like "¥28-33") to a number.
+ * For ranges, returns the midpoint. Strips ¥, $, commas, spaces.
+ */
+export function parsePrice(s: string | number | undefined | null): number {
+  if (s === null || s === undefined) return 0;
+  if (typeof s === 'number') return isNaN(s) ? 0 : s;
+  const clean = s.replace(/[¥$,\s]/g, '');
+  const rangeMatch = clean.match(/^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)$/);
+  if (rangeMatch) {
+    return (parseFloat(rangeMatch[1]) + parseFloat(rangeMatch[2])) / 2;
+  }
+  return parseFloat(clean.replace(/[^0-9.]/g, '')) || 0;
+}
+
 export function findByKeywords(obj: Record<string, string>, kws: string[]): string {
   for (const kw of kws) {
     const found = Object.entries(obj).find(([k]) =>

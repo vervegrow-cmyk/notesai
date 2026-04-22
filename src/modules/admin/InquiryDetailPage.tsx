@@ -5,6 +5,7 @@ import type {
   ProductCondition, PricingBreakdown,
 } from '../../types/inquiry';
 import { useAdminData } from './AdminLayout';
+import { parsePrice } from '../../lib/utils';
 import {
   INQUIRY_STATUS_LABELS, INQUIRY_STATUS_COLORS,
   PRODUCT_CONDITION_LABELS, PRODUCT_CONDITION_COLORS,
@@ -47,9 +48,7 @@ interface Props {
 function normalizeProduct(p: InquiryProduct) {
   const title = p.title ?? p.name ?? '未知商品';
   const thumbnail = p.images?.[0] ?? p.thumbnail ?? null;
-  const price = typeof p.estimatedPrice === 'number'
-    ? p.estimatedPrice
-    : parseFloat(String(p.estimatedPrice ?? '0').replace(/[^0-9.]/g, '')) || 0;
+  const price = parsePrice(p.estimatedPrice);
   const qty = p.quantity ?? 1;
   const condition: ProductCondition = (p.condition as ProductCondition) ?? 'used';
   return { ...p, title, thumbnail, price, qty, condition };

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { RecoveryMethod, PickupInfo } from '../../types/recovery';
 import { useRecoveryStore } from '../../stores/recoveryStore';
 import { saveInquiry, selectLogistics } from '../../services/inquiryApi';
+import { parsePrice } from '../../lib/utils';
 
 interface Props {
   onBack: () => void;
@@ -57,8 +58,6 @@ export function RecoveryCartPage({ onBack, onOrdersView }: Props) {
       };
     }
     try {
-      const parsePrice = (s: string) =>
-        parseFloat(s.replace(/[^0-9.]/g, '')) || 0;
       const estimatedTotal = items.reduce((sum, i) => sum + parsePrice(i.estimatedPrice), 0);
       const res = await saveInquiry({
         userName: userName.trim(),

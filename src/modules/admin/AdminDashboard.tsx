@@ -10,6 +10,7 @@ import {
 } from '../../types/inquiry';
 import { getInquiries, getStatistics, updateInquiryStatus, deleteInquiry } from '../../services/inquiryApi';
 import { useAuthStore } from '../../stores/authStore';
+import { parsePrice } from '../../lib/utils';
 import { InquiryDetailPage } from './InquiryDetailPage';
 
 interface CustomerGroup {
@@ -32,9 +33,7 @@ function normalizeProduct(p: InquiryProduct): InquiryProduct & {
 } {
   const _title = p.title ?? p.name ?? '未知商品';
   const _thumbnail = p.images?.[0] ?? p.thumbnail ?? null;
-  const _price = typeof p.estimatedPrice === 'number'
-    ? p.estimatedPrice
-    : parseFloat(String(p.estimatedPrice ?? '0').replace(/[^0-9.]/g, '')) || 0;
+  const _price = parsePrice(p.estimatedPrice);
   const _qty = p.quantity ?? 1;
   const _condition: ProductCondition = (p.condition as ProductCondition) ?? 'used';
   return { ...p, _title, _thumbnail, _price, _qty, _condition };

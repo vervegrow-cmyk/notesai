@@ -5,6 +5,7 @@ import { useRecoveryStore } from '../../stores/recoveryStore';
 import { useUserInfoStore } from '../../stores/userInfoStore';
 import { saveInquiry } from '../../services/inquiryApi';
 import { PickupForm } from './PickupForm';
+import { parsePrice } from '../../lib/utils';
 
 interface Props {
   result: PricingResult;
@@ -13,11 +14,6 @@ interface Props {
   onClose: () => void;
   onOrderCreated: () => void;
   onAddedToCart: () => void;
-}
-
-function parsePrice(s: string | undefined): number {
-  if (!s) return 0;
-  return parseFloat(s.replace(/[^0-9.]/g, '')) || 0;
 }
 
 export function RecoveryMethodModal({ result, product, thumbnail, onClose, onOrderCreated, onAddedToCart }: Props) {

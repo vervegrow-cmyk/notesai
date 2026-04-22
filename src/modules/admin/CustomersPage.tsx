@@ -7,6 +7,7 @@ import {
   SHIPPING_METHOD_LABELS, SHIPPING_METHOD_ICONS,
 } from '../../types/inquiry';
 import { useAdminData } from './AdminLayout';
+import { parsePrice } from '../../lib/utils';
 
 // ── types ────────────────────────────────────────────────────────────────────
 
@@ -30,9 +31,7 @@ type NP = InquiryProduct & {
 function normalizeProduct(p: InquiryProduct): NP {
   const _title = p.title ?? p.name ?? '未知商品';
   const _thumbnail = p.images?.[0] ?? p.thumbnail ?? null;
-  const _price = typeof p.estimatedPrice === 'number'
-    ? p.estimatedPrice
-    : parseFloat(String(p.estimatedPrice ?? '0').replace(/[^0-9.]/g, '')) || 0;
+  const _price = parsePrice(p.estimatedPrice);
   const _qty = p.quantity ?? 1;
   const _condition: ProductCondition = (p.condition as ProductCondition) ?? 'used';
   return { ...p, _title, _thumbnail, _price, _qty, _condition };
